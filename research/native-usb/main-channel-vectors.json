@@ -1,0 +1,22 @@
+{
+  "provenance": "OpenSSL 3.5.6 7 Apr 2026 (Library: OpenSSL 3.5.6 7 Apr 2026); test scalars 1 and 2; pkeyutl derive both directions; enc AES256CBC",
+  "mac": "02:00:00:00:00:01",
+  "uid": "9QwWjVh4JyVkr4gU963imNiiPaw=",
+  "client_public": "BADGhY4GtwQE6c2ePstmI5W0QpxkgTkFP7Uh+CivYGtNPbqhS1537+dZKP4dwSei/6jeM0izwYVqQpv5fn4xwuW9ZgEYOSlqeJo7wARcil+0LH0b2Zj1RElXm0RoF6+9Fyc+ZiyX7nKZXvQmQMVQuQE/rQdhNTxwhqJywkCIvpR2n9FmUA==",
+  "phone_public": "BABDPCGQJCd+fmgvyyiBSMKCdHQDJ5sczAY1LG5VBddpvpezsgTabvVVB6oQSjo1xa9Bzy+jZNYP2Wf0Pjkzum14PQD0u4zH+G2yZwCn8+zu7tPwtca1EHxNqXdAqyGimQbELbuz43fenyUfa5OTf6maMkj06vy+le3A9Pcb41bWYfQbAg==",
+  "secret": "00433c219024277e7e682fcb288148c282747403279b1ccc06352c6e5505d769be97b3b204da6ef55507aa104a3a35c5af41cf2fa364d60fd967f43e3933ba6d783d",
+  "commitment": "6cyT58dDXSV2Qsb1y5mmmXsYvvHb1Y/HiqoqZlEaTLM=",
+  "phone_hmac": "NtfGoJ98s8jPhIIASG4d8WVt6QCTapO2YCboZTiXKRw=",
+  "client_hmac": "T6LLsvaZ4wup2KeagnwGvZqCyN7uc7q9OGV1wyyeb1s=",
+  "session_key": "34d7b9e0cddd937255d3bb2d5db0904cf3621799b005c25b3afd48e9a2688d8e",
+  "passkey": "504206",
+  "control": {
+    "TYPE": "REQ",
+    "MSG": "OfflineExample",
+    "PARAM": {
+      "value": 7
+    }
+  },
+  "ciphertext": "cb6287b050af6a16c97cb5325026eb9ff366f210564b8af7490632b8e4fa3a86e14ca54d22f6710fef1a641d45d9725c0a678d6ae2c14f4eb539d3e5c1b7ec5c",
+  "bad_padding_ciphertext": "f5b167f04322176b2d669edaf1b70357"
+}
