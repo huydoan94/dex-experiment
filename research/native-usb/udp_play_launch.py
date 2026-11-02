@@ -1,0 +1,83 @@
+"""Validate approved UDP PLAY snapshot and select USB identity inside outer timeout."""
+import argparse
+import hashlib
+import os
+import socket
+from pathlib import Path
+import sys
+import time
+
+EXPECTED = {'ui_confirm_display0.py': '8fcbca3a7cdd035dd2fa82af9c55eeaa45ec77af69e6ff2f7893e13076d891f4',
+ 'rtsp.py': 'b4ae5bb775b5aa908787ad0b8fef3ed35c6e7270c831872b1507a68972d830c0',
+ 'rtsp_hello.py': 'f3d487c194cb51d5041942ce3599928148d8b10cb6db88ea9cd71ea54a00db3b',
+ 'rtsp_capabilities.py': 'febeddd3205c547df005b32007d489df2d555343065c364f521e19ad6e090fdf',
+ 'rtsp_setup.py': '9d2acc07e2ea07a039a2c1020ac3995227f3f77cb74f0f553d54c38bc4ebe238',
+ 'rtsp_udp_setup.py': 'e926b95bdfde5cb7fde209fa44d3db5986c6d0a67863b57e8b609cf786af83f1',
+ 'ui_confirm.py': 'dc065406b6ca0b94a236f67fb8ace558c3a1f6e250262475c08a26e3b6292de6',
+ 'wfd_startup.py': '150277552e6c8d9bf5d97e8d65b1c72db64b10f9a0a0fe3156e83d4f7f3054df',
+ 'idc_handshake.py': '526474bb455280d931d78aef32c834485e656d781f71b8c3369f979d798c7036',
+ 'idc.py': 'a36d6974c787944c093290a5e929a5ac9bdb39ee8f52030cbc05006389590557',
+ 'usb_tunnel.py': 'c21fc066271ff90da51d710f0484136a8707be812f75c0f0f4244ef0d8a7367b',
+ 'tcp_control.py': '5b7b82c364fc620a1f937c8c377a12191388649ff52c4359efb77b8fce0080e1',
+ 'udp_tunnel.py': 'fa9a7ce9f0657279b05662335b0860f53a2125849b8bbf5a174a9d8833628d04',
+ 'idc_capture.py': '0d5e64f98886b3680b940ab73bce6e759df701ea0723b6a5880e29fa0eb05647',
+ 'loopback_transfer.py': 'a3f36a210708a8f8158ee07594c9ed6ac84eaa4a8af51c8f2b9fca5e05e1c7f6',
+ 'loopback_capture.py': 'ec5ffe6c70eca6e6c937e5b51cc17f27c4154b8072e9f4c0b92342a04fa0a267',
+ 'auth_probe.py': '3c3b7dfa734a851b4fb162da0cd83189d4575f67a9fc6d009fb3aae7c602acf6',
+ 'capabilities_probe.py': 'a4a8426b6be46632a21c8b7e8a8736d2a706d199eedd9a9fc881f0c04fcf7930',
+ 'pss_probe.py': '48874690a939687a193e78e81d56c7370c6fd15bec034e80d58c1896bd53c41b',
+ 'tunnel_probe.py': '824add622548ccae8f0fbc3633bd5dec5abad986c36b7f1323cb2eeb0ded1f14',
+ 'conn_frames.py': '7ead84c77f09d946885c5c3326810e8c3bfe8cad8340338a338f963b24f560e1',
+ 'main_channel.py': 'dce673a0ee07298a208e15d6e789e4196d2723d72aafb4a24f3d1c7e82b5979a',
+ 'version_query.py': 'bf3b459d624655f6b37074c23876bab20f72275967a36752edf600e5a130a758',
+ 'rtsp_udp_play.py': '18ab29b2a6780dc803702268fa2b36557269f39a5758ef8d69a1d3db84ffa2a1',
+ 'udp_play_probe.py': '6572dfee0fc4e8ba7ddb6a1b4735a2309b8318112f2415fa8756e6b93335c90a'}
+
+
+
+def require_adb_server():
+    """Check only the backend machine TCP endpoint; do not send ADB/device commands."""
+    try:
+        with socket.create_connection(("127.0.0.1",5037),timeout=.5):
+            pass
+    except OSError as error:
+        raise RuntimeError("container ADB server unavailable; prepare it under a fresh phone grant") from error
+
+
+def main(argv=None):
+    started_at = time.monotonic()
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--approved-phone-udp-play", action="store_true")
+    p.add_argument("--accept-persistent-state", action="store_true")
+    p.add_argument("--output", type=Path)
+    a = p.parse_args(argv)
+    if not a.approved_phone_udp_play:
+        print("PLAN_ONLY: no phone access; run only through udp_play_once.sh", flush=True)
+        return 0
+    if not a.accept_persistent_state or a.output is None:
+        p.error("requires persistent-state acceptance and new output")
+    if a.output.exists():
+        raise FileExistsError("output already exists")
+    # Leave15s before the outer90s limit for remote timeout/cleanup.
+    os.environ["DEX_AUTO_UI_DEADLINE"] = str(started_at + 75)
+    if not EXPECTED:
+        raise RuntimeError("empty approved source manifest")
+    root = Path("research/native-usb")
+    for name, digest in EXPECTED.items():
+        if hashlib.sha256((root/name).read_bytes()).hexdigest() != digest:
+            raise RuntimeError("approved source mismatch: " + name)
+    require_adb_server()
+    import usb.core
+    phones = list(usb.core.find(find_all=True, idVendor=0x0000, idProduct=0x0000))
+    if len(phones) != 1:
+        raise RuntimeError("expected exactly one Samsung phone; refusing alternatives")
+    phone = phones[0]
+    print("SELECTED_USB bus=%03d address=%03d" % (phone.bus, phone.address), flush=True)
+    print("UDP_PLAY_OUTPUT_DIR=" + str(a.output), flush=True)
+    os.execv(sys.executable, [sys.executable, str(root/"udp_play_probe.py"),
+        "--approved-phone-udp-play", "--accept-persistent-state",
+        "--bus", str(phone.bus), "--address", str(phone.address), "--output", str(a.output)])
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
