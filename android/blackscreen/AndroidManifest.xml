@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Black OLED cover for the phone screen during DeX for PC sessions; started and stopped over ADB. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="app.blackscreen"
+    android:versionCode="2"
+    android:versionName="2.0">
+
+    <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="33" />
+
+    <!-- Granted over ADB: appops set app.blackscreen SYSTEM_ALERT_WINDOW allow -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <application android:label="DeX black screen" android:allowBackup="false" android:hasCode="true">
+        <!-- Exported so ADB shell can start and stop it; it only covers the phone screen in black. -->
+        <service android:name=".BlackScreenService" android:exported="true" />
+        <!-- Immersive black screen: hides the status and navigation bars against burn-in. -->
+        <activity android:name=".BlackActivity" android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+            android:excludeFromRecents="true" android:launchMode="singleTask"
+            android:taskAffinity="app.blackscreen.black"
+            android:screenOrientation="unspecified" android:resizeableActivity="false" />
+    </application>
+</manifest>
