@@ -1,0 +1,27 @@
+# Install in backend as root (user action; 77-DEXD_PIPELINE.md):
+#   install -m 644 /home/dex/dex-experiment/research/native-usb/dexd.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable dexd.service
+# Starts at every backend start; the host restarts backend on every phone USB event.
+[Unit]
+Description=DeX always-on pipeline (dexd)
+After=local-fs.target network.target
+
+[Service]
+Type=simple
+User=dex
+Group=dex
+WorkingDirectory=/home/dex/dex-experiment
+Environment=PYTHONPATH=/home/dex/dex-experiment/tools/crypto-root/usr/lib/python3/dist-packages:/home/dex/dex-experiment/tools/usb-root/usr/lib/python3/dist-packages
+ExecStart=/usr/bin/python3 -u /home/dex/dex-experiment/research/native-usb/dexd.py
+# /run/dex-run (0700, dex): FIFOs and viewer locks; removed when dexd stops.
+RuntimeDirectory=dex-run
+RuntimeDirectoryMode=0700
+# SIGTERM to dexd only; it forwards one SIGTERM to the session (TEARDOWN, then cleanup).
+KillMode=mixed
+TimeoutStopSec=50
+# A crash or exit is logged and analysed on request, never restarted: a new
+# session needs a fresh USB event (relisten window).
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
