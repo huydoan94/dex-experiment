@@ -1,0 +1,9 @@
+<!-- Native media dependencies; the direct TLS transport uses .NET libraries. -->
+<Project>
+  <ItemGroup>
+    <PackageReference Include="FFmpeg.AutoGen" Version="[9.0.1.1]" />
+    <PackageReference Include="Vortice.Direct3D11" Version="[3.8.3]" />
+    <PackageReference Include="Vortice.DXGI" Version="[3.8.3]" />
+    <PackageReference Include="NAudio.Wasapi" Version="[2.3.0]" />
+  </ItemGroup>
+</Project>
