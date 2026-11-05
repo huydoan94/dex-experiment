@@ -1,0 +1,55 @@
+<Window
+    x:Class="DexClient.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:DexClient.App">
+    <Grid x:Name="AppRoot" Background="#0E0F11" RequestedTheme="Dark">
+        <Grid.Resources>
+            <Style x:Key="ToolbarButton" TargetType="Button">
+                <Setter Property="Height" Value="44" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="14,0" />
+            </Style>
+        </Grid.Resources>
+        <local:CursorHost x:Name="InputSurface" IsTabStop="True" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                        KeyDown="BackendKeyDown" KeyUp="BackendKeyUp" LostFocus="BackendLostFocus">
+            <Grid x:Name="VideoHost" Background="#0E0F11" MinHeight="240" SizeChanged="VideoHostSizeChanged">
+                <SwapChainPanel x:Name="VideoSurface" SizeChanged="VideoSurfaceSizeChanged" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    PointerMoved="BackendPointerMoved" PointerPressed="BackendPointerPressed"
+                    PointerReleased="BackendPointerReleased" PointerWheelChanged="BackendWheel"
+                    PointerCaptureLost="BackendPointerCaptureLost">
+                    <TextBlock x:Name="Placeholder" Text="Waiting for your desktop…" Foreground="#9BA1AA" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                </SwapChainPanel>
+                <Path x:Name="CursorIndicator" Data="M 0,0 L 0,21 L 6,16 L 10,25 L 14,23 L 10,14 L 18,14 Z" Fill="White" Stroke="#0E0F11" StrokeThickness="1.5"
+                      IsHitTestVisible="False" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top">
+                    <Path.RenderTransform><TranslateTransform x:Name="CursorPosition" /></Path.RenderTransform>
+                </Path>
+            </Grid>
+        </local:CursorHost>
+        <Grid x:Name="HomePanel" Background="#0E0F11">
+            <Button x:Name="ConnectButton" Content="Connect" Click="ConnectBackend" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Height="64" Padding="48,0" FontSize="20" FontWeight="SemiBold" CornerRadius="14" Background="#2563EB" BorderThickness="0" Foreground="White" />
+            <TextBlock Text="Samsung DeX" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="20,16" Foreground="#8A8F98" FontSize="13" />
+        </Grid>
+        <Border x:Name="SessionToolbar" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="12" Padding="6"
+                CornerRadius="14" Background="#EB16181C" BorderBrush="#2A2D33" BorderThickness="1" AutomationProperties.Name="Session controls">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <ToggleButton x:Name="CursorButton" Content="Cursor indicator" Click="ToggleCursor" Height="44" CornerRadius="10" BorderThickness="0" Background="Transparent"
+                              ToolTipService.ToolTip="Show the local input position. This does not change the phone cursor." />
+                <ToggleButton x:Name="LowLatencyButton" Content="Low latency" IsChecked="True" Click="ToggleLowLatency" Height="44" CornerRadius="10" BorderThickness="0" Background="Transparent"
+                              ToolTipService.ToolTip="Show each picture as soon as it is decoded. Audio keeps its buffer and may trail the picture; turn off to keep sound and picture in sync." />
+                <Button Content="Telemetry" Click="OpenTelemetry" Style="{StaticResource ToolbarButton}" />
+                <Border Width="1" Height="24" Background="#33373E" Margin="4,0" />
+                <Button x:Name="DisconnectButton" Content="Disconnect" Click="DisconnectBackend" IsEnabled="False" Style="{StaticResource ToolbarButton}" Background="#DC2626" Foreground="White" />
+                <Button Content="&#xE70E;" FontFamily="Segoe Fluent Icons" Click="HideToolbar" Style="{StaticResource ToolbarButton}" AutomationProperties.Name="Hide toolbar" ToolTipService.ToolTip="Hide toolbar" />
+            </StackPanel>
+        </Border>
+        <Button x:Name="ToolbarHandle" Visibility="Collapsed" Content="&#xE70D;" FontFamily="Segoe Fluent Icons" Click="ShowToolbar"
+                HorizontalAlignment="Center" VerticalAlignment="Top" Width="72" Height="44" CornerRadius="0,0,12,12" Background="#C716181C" BorderBrush="#2A2D33"
+                AutomationProperties.Name="Show toolbar" ToolTipService.ToolTip="Show toolbar" />
+        <TextBlock x:Name="ConnectionStatus" Text="Disconnected" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="20,16" Foreground="#9BA1AA" IsHitTestVisible="False" MaxWidth="900" TextWrapping="Wrap" />
+        <TextBox x:Name="SettingsPath" Text="backend.json" Visibility="Collapsed" />
+    </Grid>
+</Window>

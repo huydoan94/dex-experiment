@@ -1,0 +1,7 @@
+{
+  "Host": "YOUR_BACKEND_HOST",
+  "Port": 7443,
+  "TokenFile": "YOUR_GATEWAY_TOKEN_FILE",
+  "CertificateSha256": "YOUR_PINNED_CERTIFICATE_SHA256_BASE64",
+  "NativeDirectory": "YOUR_FFMPEG_DIRECTORY"
+}
