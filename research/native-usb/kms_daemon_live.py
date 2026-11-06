@@ -20,6 +20,7 @@ import errno
 import os
 import select
 import stat
+import sys
 import threading
 import time
 
@@ -82,13 +83,18 @@ class DaemonLog(long.QuietLog):
 
 # Per-session USB timing (2026-11-06 latency investigation): sizes and monotonic times only.
 TIMING_CAP=600000
+# Pipelined OUT (2026-11-06): like the official PC library's overlapped I/O, the
+# protocol thread queues each USB write instead of waiting for it.
+WRITE_QUEUE_LIMIT=8192
+WRITER_STOP_SECONDS=2
+SWITCH_INTERVAL_SECONDS=.001
 
 
 def _percentiles(values,points=(.5,.9,.99)):
     if not values:
         return {}
     values=sorted(values)
-    result={"p%d"%round(p*100):round(values[min(len(values)-1,int(p*len(values)))],1) for p in points}
+    result={("p%g"%(p*100)).replace(".","_"):round(values[min(len(values)-1,int(p*len(values)))],1) for p in points}
     result["max"]=round(values[-1],1)
     return result
 
@@ -105,21 +111,36 @@ def _peak_window_bytes(stamps,sizes,window_ns):
 
 
 class UsbTiming:
-    """Wraps the PyUSB device to time every IN read and OUT write; never keeps payload.
+    """Wraps the PyUSB device: one ordered writer thread, plus timing; never keeps payload.
 
+    write() queues the transfer for the single writer thread and returns at once,
+    so every OUT keeps its order (including a full-packet write's ZLP) and USB
+    still has one writer. A failed write is raised by the next read or write.
     The reader thread stamps each non-empty read; the recorder stamps the owner
     thread taking each chunk. ReadPump preserves FIFO order, so the k-th consumed
     chunk is the k-th read and their difference is that chunk's backlog wait."""
-    def __init__(self,device,cap=TIMING_CAP):
-        self.device,self.cap=device,cap
+    def __init__(self,device,cap=TIMING_CAP,pipelined=True):
+        self.device,self.cap,self.pipelined=device,cap,pipelined
         self.read_start,self.read_end,self.read_bytes=array("q"),array("q"),array("i")
         self.consumed=array("q")
-        self.write_ns,self.write_bytes=array("q"),array("i")
+        self.write_ns,self.write_bytes,self.write_queued_ns=array("q"),array("i"),array("q")
+        self.condition=threading.Condition()
+        self.pending=deque()
+        self.queue_peak=0
+        self.writer=None
+        self.writer_error=None
+        self.writer_stopping=False
 
     def __getattr__(self,name):
         return getattr(self.device,name)
 
+    def _raise_writer_error(self):
+        if self.writer_error is not None:
+            raise duplex_link.TunnelError("pipelined USB write failed: %s: %s"%(
+                type(self.writer_error).__name__,self.writer_error))
+
     def read(self,endpoint,size,timeout=None):
+        self._raise_writer_error()
         start=time.monotonic_ns()
         data=self.device.read(endpoint,size,timeout=timeout)
         if len(data) and len(self.read_end)<self.cap:
@@ -128,14 +149,67 @@ class UsbTiming:
             self.read_bytes.append(len(data))
         return data
 
-    def write(self,endpoint,data,timeout=None):
+    def _timed_write(self,endpoint,data,timeout,queued):
         start=time.monotonic_ns()
         try:
             return self.device.write(endpoint,data,timeout=timeout)
         finally:
             if len(self.write_ns)<self.cap:
-                self.write_ns.append(time.monotonic_ns()-start)
+                end=time.monotonic_ns()
+                self.write_ns.append(end-start)
                 self.write_bytes.append(len(data))
+                self.write_queued_ns.append(end-queued)
+
+    def write(self,endpoint,data,timeout=None):
+        if not self.pipelined:
+            return self._timed_write(endpoint,data,timeout,time.monotonic_ns())
+        data=bytes(data)
+        with self.condition:
+            self._raise_writer_error()
+            if self.writer_stopping:
+                raise duplex_link.TunnelError("USB writer is stopped")
+            if len(self.pending)>=WRITE_QUEUE_LIMIT:
+                raise duplex_link.TunnelError("USB write queue limit exceeded")
+            if self.writer is None:
+                self.writer=threading.Thread(target=self._write_loop,name="dex-usb-out",daemon=True)
+                self.writer.start()
+            self.pending.append((endpoint,data,timeout,time.monotonic_ns()))
+            self.queue_peak=max(self.queue_peak,len(self.pending))
+            self.condition.notify_all()
+        return len(data)
+
+    def _write_loop(self):
+        while True:
+            with self.condition:
+                while not self.pending and not self.writer_stopping:
+                    self.condition.wait()
+                if not self.pending:
+                    return
+                endpoint,data,timeout,queued=self.pending[0]
+            try:
+                written=self._timed_write(endpoint,data,timeout,queued)
+                if written!=len(data):
+                    raise duplex_link.TunnelError("partial USB write")
+            except Exception as error:
+                with self.condition:
+                    self.writer_error=error
+                    self.pending.clear()
+                    self.condition.notify_all()
+                return
+            with self.condition:
+                self.pending.popleft()
+                self.condition.notify_all()
+
+    def stop_writer(self,seconds=WRITER_STOP_SECONDS):
+        """Drain queued writes, then stop; raises if the thread may still hold the handle."""
+        with self.condition:
+            self.writer_stopping=True
+            self.condition.notify_all()
+        if self.writer is not None:
+            self.writer.join(seconds)
+            if self.writer.is_alive():
+                raise duplex_link.TunnelError("USB writer did not stop; USB resource release prohibited")
+        self._raise_writer_error()
 
     def mark_consumed(self):
         if len(self.consumed)<self.cap:
@@ -145,17 +219,18 @@ class UsbTiming:
         n=min(len(self.read_end),len(self.consumed))
         reads,writes=len(self.read_end),len(self.write_ns)
         span_s=(self.read_end[-1]-self.read_end[0])/1e9 if reads>1 else 0
-        consumed_sizes=self.read_bytes[:n]
         return dict(reads=reads,read_bytes=sum(self.read_bytes),consumed=len(self.consumed),capped=reads>=self.cap,
-            span_seconds=round(span_s,3),
+            span_seconds=round(span_s,3),pipelined=self.pipelined,
             read_call_us=_percentiles([(e-s)/1000 for s,e in zip(self.read_start,self.read_end)]),
             backlog_wait_us=_percentiles([(self.consumed[i]-self.read_end[i])/1000 for i in range(n)],(.5,.9,.99,.999)),
             backlog_over_20ms=sum(self.consumed[i]-self.read_end[i]>20_000_000 for i in range(n)),
             backlog_over_50ms=sum(self.consumed[i]-self.read_end[i]>50_000_000 for i in range(n)),
             read_peak_bytes_per_100ms=_peak_window_bytes(self.read_end,self.read_bytes,100_000_000),
-            consume_peak_bytes_per_100ms=_peak_window_bytes(self.consumed[:n],consumed_sizes,100_000_000),
+            consume_peak_bytes_per_100ms=_peak_window_bytes(self.consumed[:n],self.read_bytes[:n],100_000_000),
             writes=writes,write_us=_percentiles([w/1000 for w in self.write_ns]),
-            write_total_ms=round(sum(self.write_ns)/1e6,1))
+            write_queue_to_done_us=_percentiles([w/1000 for w in self.write_queued_ns]),
+            write_queue_peak=self.queue_peak,write_total_ms=round(sum(self.write_ns)/1e6,1),
+            writer_error=type(self.writer_error).__name__ if self.writer_error else None)
 
 
 # Every event rtsp_udp_play.RedactingRecorder emits.
@@ -462,10 +537,24 @@ class DaemonOwner(base.SessionOwner):
         # Before any I/O; conn_transfer.TransferSessions then installs its decoder.
         link.record=DaemonRecorder(session.log,session.max_frame_bytes)
         session.usb_timing=link.record.timing=UsbTiming(link.device)
+        # A busy protocol thread must not hold the GIL 5 ms while the reader waits.
+        sys.setswitchinterval(SWITCH_INTERVAL_SECONDS)
         link.device=session.usb_timing
         self.reader=duplex_link.ReadPump(link,session.log)
         self.current=session
         return session
+
+    def _quiesce(self):
+        timing=getattr(self.current,"usb_timing",None)
+        if timing is not None and not self.quiesced:
+            try:
+                timing.stop_writer()
+            except Exception as error:
+                if timing.writer is not None and timing.writer.is_alive():
+                    raise
+                self.quiesce_error=error
+        error=super()._quiesce()
+        return error or self.quiesce_error
 
     def terminate(self):
         """SIGTERM: True if the running window will stop by itself (TEARDOWN, then cleanup)."""
