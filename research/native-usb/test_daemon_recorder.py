@@ -232,5 +232,85 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(daemon._peak_window_bytes([0,50,100,101],[1,2,4,8],100),14)
 
 
+class FakeEngine:
+    def __init__(self,fail_submit=None):self.started=None;self.cancelled=False;self.closed=False;self.fail_submit=fail_submit
+    def start(self,owner,count,size):
+        self.owner=owner;self.started=(count,size)
+        for i in range(count):
+            owner.submitting()
+            if self.fail_submit==i:owner.resubmit_failed(-1)
+    def cancel_all(self):self.cancelled=True
+    def close(self):self.closed=True
+
+
+class AsyncInTests(unittest.TestCase):
+    def test_completions_split_in_order_like_512_byte_reads(self):
+        engine=FakeEngine();reader=daemon.AsyncIn(engine,TimeoutError,transfers=3,transfer_bytes=16384)
+        self.assertEqual((engine.started,reader.inflight),((3,16384),3))
+        transfer=sized(1384,1)+sized(1008,2)+sized(1384,3)+bytes([PAD_BYTE])
+        long_transfer=bytes(range(256))*80   # 20480 bytes: one 16384 completion then 4096
+        self.assertTrue(reader.complete(0,0,transfer))
+        self.assertTrue(reader.complete(1,0,long_transfer[:16384]))
+        self.assertTrue(reader.complete(2,0,long_transfer[16384:]))
+        pieces=[]
+        while reader.ready:pieces.append(reader.read(512,10))
+        expected=reads(transfer)+reads(long_transfer)
+        self.assertEqual(pieces,expected)
+        decoder=conn_transfer.TransferDecoder(65536)
+        frames=[f for chunk in reads(transfer) for f in decoder.feed(chunk)]
+        self.assertEqual([f.transaction for f in frames],[1,2,3])
+        with self.assertRaises(TimeoutError):reader.read(512,10)
+
+    def test_failure_status_stops_resubmitting_and_raises_after_data(self):
+        reader=daemon.AsyncIn(FakeEngine(),TimeoutError,transfers=2,transfer_bytes=1024)
+        self.assertFalse(reader.complete(0,5,b"tail"))
+        self.assertEqual(reader.read(512,10),b"tail")
+        with self.assertRaisesRegex(Exception,"status 5"):reader.read(512,10)
+        self.assertEqual(reader.inflight,1)
+
+    def test_failed_submit_is_counted_and_reported(self):
+        reader=daemon.AsyncIn(FakeEngine(fail_submit=1),TimeoutError,transfers=3,transfer_bytes=1024)
+        self.assertEqual(reader.inflight,2)
+        with self.assertRaisesRegex(Exception,"resubmit failed"):reader.read(512,10)
+
+    def test_stop_waits_for_cancellations_and_refuses_while_in_flight(self):
+        engine=FakeEngine();reader=daemon.AsyncIn(engine,TimeoutError,transfers=2,transfer_bytes=1024)
+        with self.assertRaisesRegex(Exception,"still in flight"):reader.stop(.05)
+        self.assertTrue(engine.cancelled);self.assertFalse(engine.closed)
+        self.assertFalse(reader.complete(0,3,b""));self.assertFalse(reader.complete(1,0,b"late"))
+        reader.stop(.05)
+        self.assertTrue(engine.closed);self.assertEqual(reader.summary()["inflight"],0)
+
+    def test_ready_queue_is_bounded(self):
+        reader=daemon.AsyncIn(FakeEngine(),TimeoutError,transfers=1,transfer_bytes=1024)
+        with patch.object(daemon,"ASYNC_READY_LIMIT",1000):
+            self.assertFalse(reader.complete(0,0,b"x"*1500))
+        while reader.ready:reader.read(512,10)
+        with self.assertRaisesRegex(Exception,"limit exceeded"):reader.read(512,10)
+
+    def test_timing_uses_async_reader_and_owner_stops_it_after_reader(self):
+        engine=FakeEngine();made=[]
+        def factory(device,endpoint,timeout_error):
+            made.append(endpoint);return daemon.AsyncIn(engine,timeout_error,transfers=1,transfer_bytes=1024)
+        timing=daemon.UsbTiming(FakeUsb([]),async_in=factory,timeout_error=TimeoutError)
+        def feed():timing.async_in.complete(0,0,b"z"*600)
+        threading_timer=__import__("threading").Timer(.05,feed)
+        with self.assertRaises(TimeoutError):timing.read(133,512,1)
+        threading_timer.start();self.assertEqual(len(timing.read(133,512,1000)),512)
+        self.assertEqual(made,[133])
+        order=[]
+        reader=SimpleNamespace(stop=lambda:order.append("reader"),alive=lambda:False,stop_done=True,summary=lambda:{})
+        owner=daemon.DaemonOwner.__new__(daemon.DaemonOwner)
+        owner.current=SimpleNamespace(usb_timing=timing);owner.quiesced=False;owner.quiesce_error=None;owner.reader=reader
+        owner.util=SimpleNamespace(release_interface=lambda *a:order.append("release"));owner.result={}
+        stop=timing.async_in.stop
+        def async_stop(*a):
+            order.append("async");timing.async_in.complete(0,3,b"");return stop(.5)
+        timing.async_in.stop=async_stop
+        owner.release_interface("dev",3)
+        self.assertEqual(order,["reader","async","release"])
+        self.assertEqual(owner.result["duplex_usb"]["async_in"]["inflight"],0)
+
+
 if __name__=="__main__":
     unittest.main()

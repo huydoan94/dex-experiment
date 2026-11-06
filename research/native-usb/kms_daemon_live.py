@@ -88,6 +88,16 @@ TIMING_CAP=600000
 WRITE_QUEUE_LIMIT=8192
 WRITER_STOP_SECONDS=2
 SWITCH_INTERVAL_SECONDS=.001
+# Asynchronous IN (2026-11-06): several large bulk transfers stay submitted, as the
+# official library keeps overlapped reads queued; one-at-a-time 512-byte reads
+# capped USB at ~3 MB/s. Completions are split into <=512-byte pieces in order,
+# exactly what synchronous 512-byte reads of the same transfers return, so
+# ReadPump and TransferDecoder (transfer boundaries) see identical input.
+ASYNC_TRANSFERS=8
+ASYNC_TRANSFER_BYTES=16384
+ASYNC_PIECE_BYTES=512
+ASYNC_READY_LIMIT=8<<20
+ASYNC_STOP_SECONDS=2
 
 
 def _percentiles(values,points=(.5,.9,.99)):
@@ -119,8 +129,10 @@ class UsbTiming:
     The reader thread stamps each non-empty read; the recorder stamps the owner
     thread taking each chunk. ReadPump preserves FIFO order, so the k-th consumed
     chunk is the k-th read and their difference is that chunk's backlog wait."""
-    def __init__(self,device,cap=TIMING_CAP,pipelined=True):
+    def __init__(self,device,cap=TIMING_CAP,pipelined=True,async_in=None,timeout_error=TimeoutError):
         self.device,self.cap,self.pipelined=device,cap,pipelined
+        # async_in: None = synchronous reads; otherwise a factory(device,endpoint,timeout_error).
+        self.async_factory,self.async_in,self.timeout_error=async_in,None,timeout_error
         self.read_start,self.read_end,self.read_bytes=array("q"),array("q"),array("i")
         self.consumed=array("q")
         self.write_ns,self.write_bytes,self.write_queued_ns=array("q"),array("i"),array("q")
@@ -142,7 +154,12 @@ class UsbTiming:
     def read(self,endpoint,size,timeout=None):
         self._raise_writer_error()
         start=time.monotonic_ns()
-        data=self.device.read(endpoint,size,timeout=timeout)
+        if self.async_factory is not None:
+            if self.async_in is None:
+                self.async_in=self.async_factory(self.device,endpoint,self.timeout_error)
+            data=self.async_in.read(size,timeout)
+        else:
+            data=self.device.read(endpoint,size,timeout=timeout)
         if len(data) and len(self.read_end)<self.cap:
             self.read_start.append(start)
             self.read_end.append(time.monotonic_ns())
@@ -230,7 +247,180 @@ class UsbTiming:
             writes=writes,write_us=_percentiles([w/1000 for w in self.write_ns]),
             write_queue_to_done_us=_percentiles([w/1000 for w in self.write_queued_ns]),
             write_queue_peak=self.queue_peak,write_total_ms=round(sum(self.write_ns)/1e6,1),
-            writer_error=type(self.writer_error).__name__ if self.writer_error else None)
+            writer_error=type(self.writer_error).__name__ if self.writer_error else None,
+            async_in=self.async_in.summary() if self.async_in is not None else None)
+
+
+class AsyncIn:
+    """Keeps ASYNC_TRANSFERS bulk-IN transfers submitted; read() returns pieces in order.
+
+    The transfer engine (submit/cancel/event handling) is injected so the ordering,
+    splitting, error and stop rules are testable without a device; LibusbEngine is
+    the real one. complete() runs for each finished transfer, on whichever thread
+    libusb uses to handle events, and decides whether it is resubmitted."""
+    def __init__(self,engine,timeout_error,transfers=ASYNC_TRANSFERS,transfer_bytes=ASYNC_TRANSFER_BYTES):
+        self.engine,self.timeout_error=engine,timeout_error
+        self.condition=threading.Condition()
+        self.ready=deque()
+        self.ready_bytes=self.ready_peak=0
+        self.inflight=0
+        self.error=None
+        self.stopping=False
+        self.completions=self.bytes_in=0
+        engine.start(self,transfers,transfer_bytes)
+
+    def submitting(self):
+        """Counts a transfer in flight just before the engine submits it."""
+        with self.condition:
+            self.inflight+=1
+
+    def complete(self,transfer,status,data):
+        """Returns True to resubmit. status: 0 completed, 3 cancelled, other = failure."""
+        with self.condition:
+            self.completions+=1
+            if data:
+                self.bytes_in+=len(data)
+                for offset in range(0,len(data),ASYNC_PIECE_BYTES):
+                    self.ready.append(data[offset:offset+ASYNC_PIECE_BYTES])
+                self.ready_bytes+=len(data)
+                self.ready_peak=max(self.ready_peak,self.ready_bytes)
+                if self.ready_bytes>ASYNC_READY_LIMIT and self.error is None:
+                    self.error="async IN ready queue limit exceeded"
+            if status==0 and not self.stopping and self.error is None:
+                self.condition.notify_all()
+                return True
+            if status not in (0,3) and self.error is None:
+                self.error="async IN transfer status %d"%status
+            self.inflight-=1
+            self.condition.notify_all()
+            return False
+
+    def resubmit_failed(self,code):
+        with self.condition:
+            self.inflight-=1
+            if self.error is None:
+                self.error="async IN resubmit failed %d"%code
+            self.condition.notify_all()
+
+    def read(self,size,timeout_ms):
+        if size<ASYNC_PIECE_BYTES:
+            raise duplex_link.TunnelError("async IN caller requested unsupported chunk size")
+        deadline=time.monotonic()+(timeout_ms or 1000)/1000
+        with self.condition:
+            while not self.ready:
+                if self.error is not None:
+                    raise duplex_link.TunnelError(self.error)
+                if self.stopping:
+                    raise self.timeout_error("async IN stopped")
+                remaining=deadline-time.monotonic()
+                if remaining<=0:
+                    raise self.timeout_error("async IN timeout")
+                self.condition.wait(remaining)
+            piece=self.ready.popleft()
+            self.ready_bytes-=len(piece)
+            return piece
+
+    def stop(self,seconds=ASYNC_STOP_SECONDS):
+        """Cancel every transfer and wait for all completions; raises while any may be in flight."""
+        with self.condition:
+            self.stopping=True
+            self.condition.notify_all()
+        self.engine.cancel_all()
+        deadline=time.monotonic()+seconds
+        with self.condition:
+            while self.inflight>0 and time.monotonic()<deadline:
+                self.condition.wait(deadline-time.monotonic())
+            pending=self.inflight
+        if pending:
+            raise duplex_link.TunnelError("async IN transfers still in flight; USB resource release prohibited")
+        self.engine.close()
+
+    def summary(self):
+        with self.condition:
+            return dict(transfers=ASYNC_TRANSFERS,transfer_bytes=ASYNC_TRANSFER_BYTES,completions=self.completions,
+                        bytes_in=self.bytes_in,ready_peak_bytes=self.ready_peak,undelivered_bytes=self.ready_bytes,
+                        inflight=self.inflight,error=self.error)
+
+
+class LibusbEngine:
+    """libusb-1.0 asynchronous bulk transfers on the handle PyUSB already opened and claimed.
+
+    Uses PyUSB's own libusb context and device handle, so USB stays owned by this
+    process and its claimed interface. Struct layout matches PyUSB's _libusb_transfer."""
+    def __init__(self,device,endpoint):
+        import ctypes,ctypes.util
+        self.ct=ctypes
+        lib=ctypes.CDLL(ctypes.util.find_library("usb-1.0") or "libusb-1.0.so.0")
+        class Transfer(ctypes.Structure):
+            pass
+        self.Callback=ctypes.CFUNCTYPE(None,ctypes.POINTER(Transfer))
+        Transfer._fields_=[("dev_handle",ctypes.c_void_p),("flags",ctypes.c_uint8),("endpoint",ctypes.c_uint8),
+            ("type",ctypes.c_uint8),("timeout",ctypes.c_uint),("status",ctypes.c_int),("length",ctypes.c_int),
+            ("actual_length",ctypes.c_int),("callback",self.Callback),("user_data",ctypes.c_void_p),
+            ("buffer",ctypes.c_void_p),("num_iso_packets",ctypes.c_int)]
+        class Timeval(ctypes.Structure):
+            _fields_=[("tv_sec",ctypes.c_long),("tv_usec",ctypes.c_long)]
+        lib.libusb_alloc_transfer.argtypes=[ctypes.c_int];lib.libusb_alloc_transfer.restype=ctypes.POINTER(Transfer)
+        lib.libusb_free_transfer.argtypes=[ctypes.POINTER(Transfer)];lib.libusb_free_transfer.restype=None
+        lib.libusb_submit_transfer.argtypes=[ctypes.POINTER(Transfer)];lib.libusb_submit_transfer.restype=ctypes.c_int
+        lib.libusb_cancel_transfer.argtypes=[ctypes.POINTER(Transfer)];lib.libusb_cancel_transfer.restype=ctypes.c_int
+        lib.libusb_handle_events_timeout_completed.argtypes=[ctypes.c_void_p,ctypes.POINTER(Timeval),ctypes.c_void_p]
+        lib.libusb_handle_events_timeout_completed.restype=ctypes.c_int
+        self.lib,self.Timeval=lib,Timeval
+        resources=device._ctx
+        resources.managed_open()
+        self.handle=resources.handle.handle
+        self.context=resources.backend.ctx
+        self.endpoint=endpoint
+        self.transfers,self.buffers=[],[]
+        self.events=None
+        self.events_stop=False
+
+    def start(self,owner,count,size):
+        ct=self.ct
+        self.owner=owner
+        self.callback=self.Callback(self._done)   # kept referenced for the transfers' lifetime
+        for _ in range(count):
+            transfer=self.lib.libusb_alloc_transfer(0)
+            if not transfer:
+                raise duplex_link.TunnelError("libusb_alloc_transfer failed")
+            buffer=ct.create_string_buffer(size)
+            t=transfer.contents
+            t.dev_handle,t.flags,t.endpoint,t.type,t.timeout=self.handle,0,self.endpoint,2,0
+            t.length,t.callback,t.buffer,t.num_iso_packets=size,self.callback,ct.addressof(buffer),0
+            self.transfers.append(transfer);self.buffers.append(buffer)
+        self.events=threading.Thread(target=self._handle_events,name="dex-usb-events",daemon=True)
+        self.events.start()
+        for transfer in self.transfers:
+            owner.submitting()
+            code=self.lib.libusb_submit_transfer(transfer)
+            if code:
+                owner.resubmit_failed(code)
+
+    def _done(self,transfer):
+        t=transfer.contents
+        data=self.ct.string_at(t.buffer,t.actual_length) if t.actual_length>0 else b""
+        if self.owner.complete(transfer,t.status,data):
+            code=self.lib.libusb_submit_transfer(transfer)
+            if code:
+                self.owner.resubmit_failed(code)
+
+    def _handle_events(self):
+        timeout=self.Timeval(0,100000)
+        while not self.events_stop:
+            self.lib.libusb_handle_events_timeout_completed(self.context,self.ct.byref(timeout),None)
+
+    def cancel_all(self):
+        for transfer in self.transfers:
+            self.lib.libusb_cancel_transfer(transfer)   # not-found codes for finished transfers are expected
+
+    def close(self):
+        self.events_stop=True
+        if self.events is not None:
+            self.events.join(1)
+        for transfer in self.transfers:
+            self.lib.libusb_free_transfer(transfer)
+        self.transfers=[]
 
 
 # Every event rtsp_udp_play.RedactingRecorder emits.
@@ -536,7 +726,8 @@ class DaemonOwner(base.SessionOwner):
             log=DaemonLog(log),on_streaming=self.on_streaming,**kwargs)
         # Before any I/O; conn_transfer.TransferSessions then installs its decoder.
         link.record=DaemonRecorder(session.log,session.max_frame_bytes)
-        session.usb_timing=link.record.timing=UsbTiming(link.device)
+        session.usb_timing=link.record.timing=UsbTiming(link.device,timeout_error=link.timeout_error,
+            async_in=lambda device,endpoint,timeout_error:AsyncIn(LibusbEngine(device,endpoint),timeout_error))
         # A busy protocol thread must not hold the GIL 5 ms while the reader waits.
         sys.setswitchinterval(SWITCH_INTERVAL_SECONDS)
         link.device=session.usb_timing
@@ -554,6 +745,11 @@ class DaemonOwner(base.SessionOwner):
                     raise
                 self.quiesce_error=error
         error=super()._quiesce()
+        if timing is not None and timing.async_in is not None and not timing.async_in.stopping:
+            try:
+                timing.async_in.stop()
+            finally:
+                self.result.setdefault("duplex_usb",{})["async_in"]=timing.async_in.summary()
         return error or self.quiesce_error
 
     def terminate(self):
