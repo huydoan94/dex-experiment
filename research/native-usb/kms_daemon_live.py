@@ -79,6 +79,42 @@ class DaemonLog(long.QuietLog):
         return event in QUIET_EVENTS
 
 
+# Every event rtsp_udp_play.RedactingRecorder emits.
+RECORDER_EVENTS=frozenset(("usb_raw","usb_in_chunk","usb_frame_in","usb_frame_in_data",
+                           "usb_in_unparsed"))
+if not RECORDER_EVENTS<=QUIET_EVENTS:
+    raise RuntimeError("quiet recorder requires every recorder event to be quiet")
+
+
+class DaemonRecorder(play.RedactingRecorder):
+    """RedactingRecorder that skips work DaemonLog would discard.
+
+    While the log is quiet every recorder event is counted, never written, so the
+    digests, re-encoding and datagram parsing behind each one are skipped. The
+    decoder still sees every read, so it stays in step for the logged teardown,
+    and each event is counted exactly as QuietLog would count it."""
+    def __call__(self,direction,data):
+        log=self.log
+        if not log.quiet:
+            return super().__call__(direction,data)
+        counts=log.suppressed
+        if direction!="in":
+            counts["usb_raw"]+=1
+            return
+        if self.failed:
+            counts["usb_in_unparsed"]+=1
+            return
+        counts["usb_in_chunk"]+=1
+        try:
+            frames=self.decoder.feed(data)
+        except ValueError:
+            self.failed=True
+            counts["usb_in_unparsed"]+=1
+            return
+        for frame in frames:
+            counts["usb_frame_in_data" if (frame.command,frame.kind)==(5,1) else "usb_frame_in"]+=1
+
+
 class DetachableSink:
     """live_sink.TsSink's put/close/summary contract for a FIFO whose reader comes and goes.
 
@@ -337,6 +373,8 @@ class DaemonOwner(base.SessionOwner):
         session=DaemonSession(link,first_transaction,max_frame_bytes,long.LONG_RECEIVE_BYTES,
             sink=self.sink,stop_file=self.stop_file,input_fifo=self.input_fifo,
             log=DaemonLog(log),on_streaming=self.on_streaming,**kwargs)
+        # Before any I/O; conn_transfer.TransferSessions then installs its decoder.
+        link.record=DaemonRecorder(session.log,session.max_frame_bytes)
         self.reader=duplex_link.ReadPump(link,session.log)
         self.current=session
         return session
