@@ -23,6 +23,9 @@ PAIR_SECONDS = 15
 STARTUP_SECONDS = 120
 WRITE_SECONDS = .5
 MAX_GREETING = 1024
+# DSCP 41 on everything sent to the client (user 2026-11-06); ToS byte = DSCP << 2,
+# the kernel keeps managing the two ECN bits.
+DSCP = 41
 
 
 def response(sock, status):
@@ -257,6 +260,7 @@ class Handler(socketserver.BaseRequestHandler):
         try:
             self.request.settimeout(5)
             self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self.request.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, DSCP << 2)
             sock = server.context.wrap_socket(self.request, server_side=True)
             line = bytearray()
             while len(line) <= MAX_GREETING:
