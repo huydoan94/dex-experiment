@@ -14,6 +14,7 @@ as kms_session_live (unchanged), with:
   traffic (media, ACKs, heartbeats, input) is counted, not written.
 Saved results stay counts only.
 """
+from array import array
 from collections import Counter,deque
 import errno
 import os
@@ -79,6 +80,84 @@ class DaemonLog(long.QuietLog):
         return event in QUIET_EVENTS
 
 
+# Per-session USB timing (2026-11-06 latency investigation): sizes and monotonic times only.
+TIMING_CAP=600000
+
+
+def _percentiles(values,points=(.5,.9,.99)):
+    if not values:
+        return {}
+    values=sorted(values)
+    result={"p%d"%round(p*100):round(values[min(len(values)-1,int(p*len(values)))],1) for p in points}
+    result["max"]=round(values[-1],1)
+    return result
+
+
+def _peak_window_bytes(stamps,sizes,window_ns):
+    best=total=start=0
+    for end in range(len(stamps)):
+        total+=sizes[end]
+        while stamps[end]-stamps[start]>window_ns:
+            total-=sizes[start]
+            start+=1
+        best=max(best,total)
+    return best
+
+
+class UsbTiming:
+    """Wraps the PyUSB device to time every IN read and OUT write; never keeps payload.
+
+    The reader thread stamps each non-empty read; the recorder stamps the owner
+    thread taking each chunk. ReadPump preserves FIFO order, so the k-th consumed
+    chunk is the k-th read and their difference is that chunk's backlog wait."""
+    def __init__(self,device,cap=TIMING_CAP):
+        self.device,self.cap=device,cap
+        self.read_start,self.read_end,self.read_bytes=array("q"),array("q"),array("i")
+        self.consumed=array("q")
+        self.write_ns,self.write_bytes=array("q"),array("i")
+
+    def __getattr__(self,name):
+        return getattr(self.device,name)
+
+    def read(self,endpoint,size,timeout=None):
+        start=time.monotonic_ns()
+        data=self.device.read(endpoint,size,timeout=timeout)
+        if len(data) and len(self.read_end)<self.cap:
+            self.read_start.append(start)
+            self.read_end.append(time.monotonic_ns())
+            self.read_bytes.append(len(data))
+        return data
+
+    def write(self,endpoint,data,timeout=None):
+        start=time.monotonic_ns()
+        try:
+            return self.device.write(endpoint,data,timeout=timeout)
+        finally:
+            if len(self.write_ns)<self.cap:
+                self.write_ns.append(time.monotonic_ns()-start)
+                self.write_bytes.append(len(data))
+
+    def mark_consumed(self):
+        if len(self.consumed)<self.cap:
+            self.consumed.append(time.monotonic_ns())
+
+    def summary(self):
+        n=min(len(self.read_end),len(self.consumed))
+        reads,writes=len(self.read_end),len(self.write_ns)
+        span_s=(self.read_end[-1]-self.read_end[0])/1e9 if reads>1 else 0
+        consumed_sizes=self.read_bytes[:n]
+        return dict(reads=reads,read_bytes=sum(self.read_bytes),consumed=len(self.consumed),capped=reads>=self.cap,
+            span_seconds=round(span_s,3),
+            read_call_us=_percentiles([(e-s)/1000 for s,e in zip(self.read_start,self.read_end)]),
+            backlog_wait_us=_percentiles([(self.consumed[i]-self.read_end[i])/1000 for i in range(n)],(.5,.9,.99,.999)),
+            backlog_over_20ms=sum(self.consumed[i]-self.read_end[i]>20_000_000 for i in range(n)),
+            backlog_over_50ms=sum(self.consumed[i]-self.read_end[i]>50_000_000 for i in range(n)),
+            read_peak_bytes_per_100ms=_peak_window_bytes(self.read_end,self.read_bytes,100_000_000),
+            consume_peak_bytes_per_100ms=_peak_window_bytes(self.consumed[:n],consumed_sizes,100_000_000),
+            writes=writes,write_us=_percentiles([w/1000 for w in self.write_ns]),
+            write_total_ms=round(sum(self.write_ns)/1e6,1))
+
+
 # Every event rtsp_udp_play.RedactingRecorder emits.
 RECORDER_EVENTS=frozenset(("usb_raw","usb_in_chunk","usb_frame_in","usb_frame_in_data",
                            "usb_in_unparsed"))
@@ -93,7 +172,11 @@ class DaemonRecorder(play.RedactingRecorder):
     digests, re-encoding and datagram parsing behind each one are skipped. The
     decoder still sees every read, so it stays in step for the logged teardown,
     and each event is counted exactly as QuietLog would count it."""
+    timing=None
+
     def __call__(self,direction,data):
+        if direction=="in" and self.timing is not None:
+            self.timing.mark_consumed()
         log=self.log
         if not log.quiet:
             return super().__call__(direction,data)
@@ -358,6 +441,9 @@ class DaemonSession(base.SessionInput):
         result=super().summary()
         result["rtsp_seen_total"]=self.rtsp_seen.total
         result["kms_input"]["writer_releases"]=self.writer_releases
+        timing=getattr(self,"usb_timing",None)
+        if timing is not None:
+            result["usb_timing"]=timing.summary()
         return result
 
 
@@ -375,6 +461,8 @@ class DaemonOwner(base.SessionOwner):
             log=DaemonLog(log),on_streaming=self.on_streaming,**kwargs)
         # Before any I/O; conn_transfer.TransferSessions then installs its decoder.
         link.record=DaemonRecorder(session.log,session.max_frame_bytes)
+        session.usb_timing=link.record.timing=UsbTiming(link.device)
+        link.device=session.usb_timing
         self.reader=duplex_link.ReadPump(link,session.log)
         self.current=session
         return session

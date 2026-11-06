@@ -124,10 +124,56 @@ class Tests(unittest.TestCase):
             session=conn_transfer.TransferSessions(owner).session(
                 link,1,65536,daemon.long.MAX_RECEIVE_BYTES,log=lambda event,**fields:None)
         self.assertIs(type(link.record),daemon.DaemonRecorder)
+        self.assertIs(link.device,session.usb_timing)
+        self.assertIs(link.record.timing,session.usb_timing)
         self.assertIs(link.record.log,session.log)
         self.assertIsInstance(link.record.decoder,conn_transfer.TransferDecoder)
         self.assertIsInstance(session.decoder,conn_transfer.TransferDecoder)
         self.assertIs(owner.reader.link,link)
+
+
+class FakeUsb:
+    def __init__(self,chunks):self.chunks,self.written=list(chunks),[]
+    def read(self,endpoint,size,timeout=None):
+        if not self.chunks:raise TimeoutError
+        return self.chunks.pop(0)
+    def write(self,endpoint,data,timeout=None):self.written.append(len(data));return len(data)
+    def get_active_configuration(self):return "config"
+
+
+class TimingTests(unittest.TestCase):
+    def test_reads_writes_and_fifo_backlog_are_timed_without_payload(self):
+        timing=daemon.UsbTiming(FakeUsb([b"a"*512,b"",b"b"*100]))
+        self.assertEqual(timing.get_active_configuration(),"config")
+        self.assertEqual(bytes(timing.read(133,512)),b"a"*512)
+        self.assertEqual(len(timing.read(133,512)),0)
+        timing.read(133,512)
+        with self.assertRaises(TimeoutError):timing.read(133,512)
+        timing.write(3,b"x"*32)
+        record,log,_=recorder(daemon.DaemonRecorder,quiet=True)
+        record.timing=timing
+        for chunk in (media(1)[:512],media(1)[512:]):record("in",chunk)
+        record("out",b"ack")
+        summary=timing.summary()
+        self.assertEqual((summary["reads"],summary["read_bytes"],summary["consumed"]),(2,612,2))
+        self.assertEqual((summary["writes"],timing.write_bytes.tolist()),(1,[32]))
+        self.assertGreaterEqual(summary["backlog_wait_us"]["max"],0)
+        self.assertEqual(summary["read_peak_bytes_per_100ms"],612)
+        self.assertFalse(any(isinstance(v,(bytes,bytearray)) for v in vars(timing).values()))
+
+    def test_cap_bounds_memory_and_keeps_pairs_aligned(self):
+        timing=daemon.UsbTiming(FakeUsb([b"z"]*5),cap=3)
+        for _ in range(5):timing.read(133,512);timing.mark_consumed()
+        self.assertEqual((len(timing.read_end),len(timing.consumed)),(3,3))
+        self.assertTrue(timing.summary()["capped"])
+
+    def test_empty_summary(self):
+        summary=daemon.UsbTiming(FakeUsb([])).summary()
+        self.assertEqual((summary["reads"],summary["backlog_wait_us"],summary["write_us"]),(0,{},{}))
+
+    def test_peak_window(self):
+        self.assertEqual(daemon._peak_window_bytes([0,50,100,250],[1,2,4,8],100),8)
+        self.assertEqual(daemon._peak_window_bytes([0,50,100,101],[1,2,4,8],100),14)
 
 
 if __name__=="__main__":
