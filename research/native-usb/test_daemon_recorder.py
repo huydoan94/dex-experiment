@@ -150,6 +150,7 @@ class TimingTests(unittest.TestCase):
         timing.read(133,512)
         with self.assertRaises(TimeoutError):timing.read(133,512)
         timing.write(3,b"x"*32)
+        timing.stop_writer()
         record,log,_=recorder(daemon.DaemonRecorder,quiet=True)
         record.timing=timing
         for chunk in (media(1)[:512],media(1)[512:]):record("in",chunk)
@@ -160,6 +161,61 @@ class TimingTests(unittest.TestCase):
         self.assertGreaterEqual(summary["backlog_wait_us"]["max"],0)
         self.assertEqual(summary["read_peak_bytes_per_100ms"],612)
         self.assertFalse(any(isinstance(v,(bytes,bytearray)) for v in vars(timing).values()))
+
+    def test_pipelined_writes_keep_order_and_return_without_waiting(self):
+        import threading,time as clock
+        gate=threading.Event()
+        class Slow(FakeUsb):
+            def write(self,endpoint,data,timeout=None):
+                gate.wait(2);return super().write(endpoint,data,timeout)
+        device=Slow([]);timing=daemon.UsbTiming(device)
+        started=clock.monotonic()
+        for size in (32,512,0,24):self.assertEqual(timing.write(3,b"x"*size,1000),size)
+        self.assertLess(clock.monotonic()-started,.5)
+        self.assertEqual(device.written,[])
+        gate.set();timing.stop_writer()
+        self.assertEqual(device.written,[32,512,0,24])
+        self.assertEqual(timing.summary()["write_queue_peak"],4)
+        with self.assertRaisesRegex(Exception,"writer is stopped"):timing.write(3,b"late")
+
+    def test_failed_write_surfaces_on_next_read_and_write(self):
+        class Broken(FakeUsb):
+            def write(self,endpoint,data,timeout=None):raise OSError("pipe")
+        timing=daemon.UsbTiming(Broken([b"r"]))
+        timing.write(3,b"x")
+        timing.writer.join(2)
+        with self.assertRaisesRegex(Exception,"pipelined USB write failed: OSError"):timing.read(133,512)
+        with self.assertRaisesRegex(Exception,"pipelined USB write failed"):timing.write(3,b"y")
+        with self.assertRaisesRegex(Exception,"pipelined USB write failed"):timing.stop_writer()
+
+    def test_stuck_writer_refuses_release(self):
+        import threading
+        never=threading.Event()
+        class Stuck(FakeUsb):
+            def write(self,endpoint,data,timeout=None):never.wait(5);return len(data)
+        timing=daemon.UsbTiming(Stuck([]));timing.write(3,b"x")
+        with self.assertRaisesRegex(Exception,"USB writer did not stop"):timing.stop_writer(.2)
+        owner=daemon.DaemonOwner.__new__(daemon.DaemonOwner)
+        owner.current=SimpleNamespace(usb_timing=timing);owner.quiesced=False;owner.quiesce_error=None;owner.reader=None
+        released=[];owner.util=SimpleNamespace(release_interface=lambda *a:released.append(a));owner.result={}
+        with self.assertRaisesRegex(Exception,"USB writer did not stop"):owner.release_interface("dev",3)
+        self.assertEqual(released,[])
+        never.set();timing.writer.join(2)
+        owner.release_interface("dev",3)
+        self.assertEqual(released,[("dev",3)])
+
+    def test_owner_drains_writer_before_reader_stop(self):
+        order=[]
+        timing=daemon.UsbTiming(FakeUsb([]))
+        timing.write(3,b"x")
+        stop=timing.stop_writer
+        timing.stop_writer=lambda *a:(order.append("writer"),stop(*a))
+        reader=SimpleNamespace(stop=lambda:order.append("reader"),alive=lambda:False,stop_done=True,summary=lambda:{})
+        owner=daemon.DaemonOwner.__new__(daemon.DaemonOwner)
+        owner.current=SimpleNamespace(usb_timing=timing);owner.quiesced=False;owner.quiesce_error=None;owner.reader=reader
+        owner.util=SimpleNamespace(release_interface=lambda *a:order.append("release"));owner.result={}
+        owner.release_interface("dev",3)
+        self.assertEqual(order,["writer","reader","release"])
 
     def test_cap_bounds_memory_and_keeps_pairs_aligned(self):
         timing=daemon.UsbTiming(FakeUsb([b"z"]*5),cap=3)
