@@ -41,6 +41,9 @@ RUN=Path(os.environ.get("RUNTIME_DIRECTORY","/run/dex-run"))
 REQUEST_DIR=Path(os.environ.get("DEXD_REQUEST_DIR","<request-dir>"))
 # Direct TLS gateway settings (token and certificate paths); absent = no gateway.
 GATEWAY_CONFIG=Path.home()/".config/dex-gateway/server.json"
+# Per-site settings (user 2026-11-07):
+# {"timezone": "Area/City", "phone_serial": "..."}; both optional.
+SITE_CONFIG=Path.home()/".config/dex-gateway/site.json"
 RELISTEN=RESEARCH/"reconnect_relisten.sh"
 BLACKSCREEN=RESEARCH/"blackscreen/blackscreen.sh"
 PROBE=RESEARCH/"kms_daemon_probe.py"
@@ -57,7 +60,22 @@ STOP_SECONDS=40
 POLL_SECONDS=.5
 ADB_SECONDS=30
 KEEP_SESSIONS=20
-EXPECTED={'duplex_link.py': 'e9cc017b3d0b2106ddaacd7daa6d27cc3a4cbcfe57ae613203a1da9b237c46d0', 'ui_confirm_display0.py': '8fcbca3a7cdd035dd2fa82af9c55eeaa45ec77af69e6ff2f7893e13076d891f4', 'rtsp.py': 'b4ae5bb775b5aa908787ad0b8fef3ed35c6e7270c831872b1507a68972d830c0', 'rtsp_hello.py': 'f3d487c194cb51d5041942ce3599928148d8b10cb6db88ea9cd71ea54a00db3b', 'rtsp_capabilities.py': 'febeddd3205c547df005b32007d489df2d555343065c364f521e19ad6e090fdf', 'rtsp_setup.py': '9d2acc07e2ea07a039a2c1020ac3995227f3f77cb74f0f553d54c38bc4ebe238', 'rtsp_udp_setup.py': 'e926b95bdfde5cb7fde209fa44d3db5986c6d0a67863b57e8b609cf786af83f1', 'ui_confirm.py': 'dc065406b6ca0b94a236f67fb8ace558c3a1f6e250262475c08a26e3b6292de6', 'wfd_startup.py': '150277552e6c8d9bf5d97e8d65b1c72db64b10f9a0a0fe3156e83d4f7f3054df', 'idc_handshake.py': '526474bb455280d931d78aef32c834485e656d781f71b8c3369f979d798c7036', 'idc.py': 'a36d6974c787944c093290a5e929a5ac9bdb39ee8f52030cbc05006389590557', 'usb_tunnel.py': 'c21fc066271ff90da51d710f0484136a8707be812f75c0f0f4244ef0d8a7367b', 'tcp_control.py': 'a6db38b962950e8ae4551eec6773a772aeadd37e29c304a8c8b9360c05139daa', 'udp_tunnel.py': 'fa9a7ce9f0657279b05662335b0860f53a2125849b8bbf5a174a9d8833628d04', 'idc_capture.py': '0d5e64f98886b3680b940ab73bce6e759df701ea0723b6a5880e29fa0eb05647', 'loopback_transfer.py': 'a3f36a210708a8f8158ee07594c9ed6ac84eaa4a8af51c8f2b9fca5e05e1c7f6', 'loopback_capture.py': 'ec5ffe6c70eca6e6c937e5b51cc17f27c4154b8072e9f4c0b92342a04fa0a267', 'auth_probe.py': '3c3b7dfa734a851b4fb162da0cd83189d4575f67a9fc6d009fb3aae7c602acf6', 'capabilities_probe.py': 'a4a8426b6be46632a21c8b7e8a8736d2a706d199eedd9a9fc881f0c04fcf7930', 'pss_probe.py': '48874690a939687a193e78e81d56c7370c6fd15bec034e80d58c1896bd53c41b', 'tunnel_probe.py': '824add622548ccae8f0fbc3633bd5dec5abad986c36b7f1323cb2eeb0ded1f14', 'conn_frames.py': '7ead84c77f09d946885c5c3326810e8c3bfe8cad8340338a338f963b24f560e1', 'main_channel.py': 'dce673a0ee07298a208e15d6e789e4196d2723d72aafb4a24f3d1c7e82b5979a', 'version_query.py': 'bf3b459d624655f6b37074c23876bab20f72275967a36752edf600e5a130a758', 'rtsp_udp_play.py': '18ab29b2a6780dc803702268fa2b36557269f39a5758ef8d69a1d3db84ffa2a1', 'conn_transfer.py': 'cc681c6ca5b7a0117d8f017e6538d511bc3f27bc6ad9049e4b52467f18f6d6cf', 'rtsp_udp_live.py': 'a66248078833f8429042715e1980a9dc6f10f67e3cab47cc818e2840960d157f', 'live_sink.py': 'ad6054c773fcfe1c63473757469bdf1ccc74eb1c965805d77e9f4617139b0a73', 'rtsp_udp_long.py': 'efe5132db7bc8c82bafc1c81cbfd8eb1f5c4d51c512acc8b671ff73560c23dc3', 'kms_mouse_live.py': '5576f8d1261f388f941b6d7b5221728fc4626b96c5e30214322c1f18dc571cf9', 'kms_handshake.py': '47a530360a186008f313eaa68ff89ad151ad5ab8fd844d7dd1027d0340924ac2', 'sidesync_packets.py': 'a382472f8d5e6ff8c8901371efe946937137017bae27d2fe7058a5af24738ce9', 'kms_hover_live.py': '5096acb84dd28d7691d9a8fdc5eb1e5505160fd97ba2e0526d46feb4360bea09', 'kms_input_live.py': '9d560161d09a9094d4849f44fb0d436abb0abbc8ff407f50d6efdfb7acf553b1', 'kms_session_live.py': '085eed451f0046170bc45c97de2797bbae30990186f2e17854927003ae8d1748', 'kms_daemon_live.py': 'e061b6af4b7c87d1140e04329ae659a8abbba7d83c71cf1eb3169899708bca73', 'kms_daemon_probe.py': 'f82f59c5b3fcf8452ccb899b2835e9c0460382d3deab9c84a543ba0e1a99f335', 'reconnect_relisten.sh': '0692110ccf1ea72a9efadebc32a5019c88ba14e53d304e129e2c913eaa1e2a4b', 'blackscreen/blackscreen.sh': '67764bd68972b6aae3c9f0a55318fdb589386d7b33b94d7989bb5a0e1dd53166', 'threaded_input.py': '258c5694ff5bf78b02da259255f6d4b8c9870818e1d097d9fb905ab08ac8e46f', 'direct_gateway.py': '99d3cc48f29e696ebd41b904bc267f6fa35e119835173dfa1ae4a67f071e6777'}
+EXPECTED={'duplex_link.py': 'e9cc017b3d0b2106ddaacd7daa6d27cc3a4cbcfe57ae613203a1da9b237c46d0', 'ui_confirm_display0.py': '8fcbca3a7cdd035dd2fa82af9c55eeaa45ec77af69e6ff2f7893e13076d891f4', 'rtsp.py': 'b4ae5bb775b5aa908787ad0b8fef3ed35c6e7270c831872b1507a68972d830c0', 'rtsp_hello.py': 'f3d487c194cb51d5041942ce3599928148d8b10cb6db88ea9cd71ea54a00db3b', 'rtsp_capabilities.py': 'febeddd3205c547df005b32007d489df2d555343065c364f521e19ad6e090fdf', 'rtsp_setup.py': '9d2acc07e2ea07a039a2c1020ac3995227f3f77cb74f0f553d54c38bc4ebe238', 'rtsp_udp_setup.py': 'e926b95bdfde5cb7fde209fa44d3db5986c6d0a67863b57e8b609cf786af83f1', 'ui_confirm.py': 'dc065406b6ca0b94a236f67fb8ace558c3a1f6e250262475c08a26e3b6292de6', 'wfd_startup.py': '150277552e6c8d9bf5d97e8d65b1c72db64b10f9a0a0fe3156e83d4f7f3054df', 'idc_handshake.py': '526474bb455280d931d78aef32c834485e656d781f71b8c3369f979d798c7036', 'idc.py': 'a36d6974c787944c093290a5e929a5ac9bdb39ee8f52030cbc05006389590557', 'usb_tunnel.py': 'c21fc066271ff90da51d710f0484136a8707be812f75c0f0f4244ef0d8a7367b', 'tcp_control.py': '5b7b82c364fc620a1f937c8c377a12191388649ff52c4359efb77b8fce0080e1', 'udp_tunnel.py': 'fa9a7ce9f0657279b05662335b0860f53a2125849b8bbf5a174a9d8833628d04', 'idc_capture.py': '0d5e64f98886b3680b940ab73bce6e759df701ea0723b6a5880e29fa0eb05647', 'loopback_transfer.py': 'a3f36a210708a8f8158ee07594c9ed6ac84eaa4a8af51c8f2b9fca5e05e1c7f6', 'loopback_capture.py': 'ec5ffe6c70eca6e6c937e5b51cc17f27c4154b8072e9f4c0b92342a04fa0a267', 'auth_probe.py': '3c3b7dfa734a851b4fb162da0cd83189d4575f67a9fc6d009fb3aae7c602acf6', 'capabilities_probe.py': 'a4a8426b6be46632a21c8b7e8a8736d2a706d199eedd9a9fc881f0c04fcf7930', 'pss_probe.py': '48874690a939687a193e78e81d56c7370c6fd15bec034e80d58c1896bd53c41b', 'tunnel_probe.py': '824add622548ccae8f0fbc3633bd5dec5abad986c36b7f1323cb2eeb0ded1f14', 'conn_frames.py': '7ead84c77f09d946885c5c3326810e8c3bfe8cad8340338a338f963b24f560e1', 'main_channel.py': 'dce673a0ee07298a208e15d6e789e4196d2723d72aafb4a24f3d1c7e82b5979a', 'version_query.py': 'bf3b459d624655f6b37074c23876bab20f72275967a36752edf600e5a130a758', 'rtsp_udp_play.py': '18ab29b2a6780dc803702268fa2b36557269f39a5758ef8d69a1d3db84ffa2a1', 'conn_transfer.py': 'cc681c6ca5b7a0117d8f017e6538d511bc3f27bc6ad9049e4b52467f18f6d6cf', 'rtsp_udp_live.py': 'a66248078833f8429042715e1980a9dc6f10f67e3cab47cc818e2840960d157f', 'live_sink.py': 'ad6054c773fcfe1c63473757469bdf1ccc74eb1c965805d77e9f4617139b0a73', 'rtsp_udp_long.py': 'efe5132db7bc8c82bafc1c81cbfd8eb1f5c4d51c512acc8b671ff73560c23dc3', 'kms_mouse_live.py': '5576f8d1261f388f941b6d7b5221728fc4626b96c5e30214322c1f18dc571cf9', 'kms_handshake.py': '47a530360a186008f313eaa68ff89ad151ad5ab8fd844d7dd1027d0340924ac2', 'sidesync_packets.py': 'a382472f8d5e6ff8c8901371efe946937137017bae27d2fe7058a5af24738ce9', 'kms_hover_live.py': '5096acb84dd28d7691d9a8fdc5eb1e5505160fd97ba2e0526d46feb4360bea09', 'kms_input_live.py': '9d560161d09a9094d4849f44fb0d436abb0abbc8ff407f50d6efdfb7acf553b1', 'kms_session_live.py': '085eed451f0046170bc45c97de2797bbae30990186f2e17854927003ae8d1748', 'kms_daemon_live.py': 'e061b6af4b7c87d1140e04329ae659a8abbba7d83c71cf1eb3169899708bca73', 'kms_daemon_probe.py': 'f82f59c5b3fcf8452ccb899b2835e9c0460382d3deab9c84a543ba0e1a99f335', 'reconnect_relisten.sh': '0692110ccf1ea72a9efadebc32a5019c88ba14e53d304e129e2c913eaa1e2a4b', 'blackscreen/blackscreen.sh': '42f6568251273ac57f671b4bf3b13242a42a8ad5a50d94447bbc9305591df808', 'threaded_input.py': '258c5694ff5bf78b02da259255f6d4b8c9870818e1d097d9fb905ab08ac8e46f', 'direct_gateway.py': '99d3cc48f29e696ebd41b904bc267f6fa35e119835173dfa1ae4a67f071e6777'}
+
+
+def site_settings(path=None):
+    """The site settings; {} when absent or unreadable (UTC logs, any single phone)."""
+    try:
+        data=json.loads(Path(path or SITE_CONFIG).read_text())
+    except (OSError,ValueError):
+        return {}
+    return {k:v for k,v in data.items() if k in ("timezone","phone_serial") and isinstance(v,str) and v}
+
+
+def apply_timezone(settings):
+    if settings.get("timezone"):
+        os.environ["TZ"]=settings["timezone"]
+        time.tzset()
 
 
 def log(message):
@@ -208,7 +226,9 @@ class Dexd:
     def ensure_blackscreen(self):
         """One read; start the app only if it is not running."""
         def adb(command):
+            serial=site_settings().get("phone_serial","")
             return subprocess.run(["bash",str(BLACKSCREEN),command],cwd=ROOT,stdin=subprocess.DEVNULL,
+                                  env=dict(os.environ,DEX_PHONE_SERIAL=serial),
                                   capture_output=True,text=True,timeout=2*ADB_SECONDS)
         try:
             if adb("running").returncode==0:
@@ -230,6 +250,7 @@ class Dexd:
         rotate(KEEP_SESSIONS-1)
         stamp=time.strftime("%Y%m%dT%H%M%S%z")
         output=LOGDIR/("session-"+stamp)
+        # TZ comes from site settings (apply_timezone at start), inherited via os.environ.
         env=dict(os.environ,PYTHONPATH=PYTHONPATH,
                  DEX_AUTO_UI_DEADLINE=str(time.monotonic()+UI_DEADLINE_SECONDS))
         with open(str(output)+".stderr.log","x") as stderr:
@@ -270,6 +291,7 @@ class Dexd:
             log("adb server did not start: %s"%error)
 
     def run(self):
+        apply_timezone(site_settings())
         LOGDIR.mkdir(parents=True,exist_ok=True)
         signal.signal(signal.SIGTERM,self.terminate)
         epoch=container_started_epoch()
