@@ -314,3 +314,103 @@ class AsyncInTests(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+
+
+class WakingInputTests(unittest.TestCase):
+    def setUp(self):
+        import os,tempfile
+        self.os=os
+        self.dir=tempfile.TemporaryDirectory()
+        self.path=os.path.join(self.dir.name,"input.fifo")
+        os.mkfifo(self.path,0o600)
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def reader(self,poll_seconds):
+        return daemon.WakingInputReader(daemon.InputReader(self.path),poll_seconds=poll_seconds)
+
+    def test_worker_collects_a_write_without_waiting_for_the_poll_interval(self):
+        import time
+        worker=self.reader(.1)
+        try:
+            time.sleep(.15)  # worker now asleep in poll() for up to 100 ms
+            fd=self.os.open(self.path,self.os.O_WRONLY|self.os.O_NONBLOCK)
+            try:
+                started=time.monotonic()
+                self.os.write(fd,b"M 0 10 20\n")
+                while not worker.queued_event() and time.monotonic()-started<1:
+                    time.sleep(.0005)
+                elapsed=time.monotonic()-started
+                self.assertTrue(worker.queued_event())
+                self.assertLess(elapsed,.03)
+                self.assertEqual(worker.events(),[(0,10,20)])
+            finally:
+                self.os.close(fd)
+        finally:
+            worker.close()
+        self.assertEqual(worker.counts["worker_stopped"],1)
+
+    def test_departed_writer_neither_spins_nor_counts_as_an_event(self):
+        import time
+        worker=self.reader(.05)
+        try:
+            fd=self.os.open(self.path,self.os.O_WRONLY|self.os.O_NONBLOCK)
+            self.os.write(fd,b"M 0 1 2\n")
+            self.os.close(fd)
+            time.sleep(.05)
+            self.assertEqual(worker.events(),[(0,1,2)])
+            calls=[]
+            original=worker.reader.events
+            worker.reader.events=lambda:calls.append(1) or original()
+            time.sleep(.3)
+            self.assertLessEqual(len(calls),10)  # ~6 at 50 ms; a spin would be thousands
+            self.assertFalse(worker.queued_event())  # only the disconnect barrier is queued
+            self.assertTrue(worker.writer_gone())
+        finally:
+            worker.close()
+
+
+class SliceWakeTests(unittest.TestCase):
+    def session(self,queued=True,**state):
+        class Reader(daemon.WakingInputReader):
+            def __init__(self):
+                pass
+            def queued_event(self):
+                return queued
+        session=object.__new__(daemon.DaemonSession)
+        fields=dict(requesting=0,input_wakes=0,window_open=True,cleanup=False,
+                    _collect_media=True,keepalive_offset=0,input=Reader())
+        fields.update(state)
+        session.__dict__.update(fields)
+        return session
+
+    def frames(self,session):
+        with patch.object(daemon.base.SessionInput,"_next_frame",create=True,return_value="frame"):
+            return daemon.DaemonSession._next_frame(session,0)
+
+    def test_queued_input_ends_the_media_slice(self):
+        session=self.session()
+        with self.assertRaises(TimeoutError):
+            self.frames(session)
+        self.assertEqual(session.input_wakes,1)
+
+    def test_no_wake_without_input_or_outside_the_pumping_window(self):
+        cases=[dict(queued=False),dict(requesting=1),dict(window_open=False),dict(cleanup=True),
+               dict(_collect_media=False),dict(keepalive_offset=None),dict(input=object())]
+        for state in cases:
+            with self.subTest(state=state):
+                session=self.session(**state)
+                self.assertEqual(self.frames(session),"frame")
+                self.assertEqual(session.input_wakes,0)
+
+    def test_request_replies_are_never_cut(self):
+        session=self.session()
+        seen=[]
+        def reply(self,*args,**kwargs):
+            seen.append(self.requesting)
+            return daemon.DaemonSession._next_frame(self,0)
+        with patch.object(daemon.base.SessionInput,"_request",create=True,new=reply), \
+             patch.object(daemon.base.SessionInput,"_next_frame",create=True,return_value="reply"):
+            self.assertEqual(daemon.DaemonSession._request(session),"reply")
+        self.assertEqual((seen,session.requesting,session.input_wakes),([1],0,0))
