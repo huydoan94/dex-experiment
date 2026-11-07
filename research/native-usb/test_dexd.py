@@ -53,7 +53,10 @@ class Env:
         self.probe=root/"probe.py"
         self.probe.write_text(FAKE_PROBE)
         self.patches=[patch.object(dexd,"LOGDIR",self.logdir),patch.object(dexd,"RUN",self.run),
-                      patch.object(dexd,"PROBE",self.probe),patch.object(dexd,"check_pins",lambda:None)]
+                      patch.object(dexd,"PROBE",self.probe),
+                      # Never the real gateway: on backend its port belongs to the running dexd.
+                      patch.object(dexd,"GATEWAY_CONFIG",root/"no-gateway.json"),
+                      patch.object(dexd,"check_pins",lambda:None)]  # last: a test stops it
         for p in self.patches:
             p.start()
 
@@ -183,7 +186,8 @@ class Tests(unittest.TestCase):
         finally:
             holder.kill();holder.wait()
         self.assertEqual(calls,[(3,9)])
-        self.assertIn("mode=restart session ended exit=0",(requests/"replug").read_text())
+        # Replug even after a clean session: restart-only cycles let the phone refuse the next connect.
+        self.assertIn("mode=replug session ended exit=0 relisten=True",(requests/"replug").read_text())
         self.assertFalse((requests/".replug.tmp").exists())
         time.sleep(1)
         self.assertEqual(calls,[(3,9)])
@@ -208,7 +212,7 @@ class Tests(unittest.TestCase):
             holder.kill();holder.wait()
         with contextlib.suppress(StopIteration):
             next(flow)
-        self.assertIn("mode=replug session ended exit=1",(requests/"replug").read_text())
+        self.assertIn("mode=replug session ended exit=1 relisten=False",(requests/"replug").read_text())
 
     def test_failed_session_after_a_passed_relisten_asks_for_a_replug(self):
         d=dexd.Dexd()
@@ -226,7 +230,7 @@ class Tests(unittest.TestCase):
             holder.kill();holder.wait()
         with contextlib.suppress(StopIteration):
             next(flow)
-        self.assertIn("mode=replug session ended exit=1",(requests/"replug").read_text())
+        self.assertIn("mode=replug session ended exit=1 relisten=True",(requests/"replug").read_text())
 
     def test_stop_while_waiting_means_no_session_and_no_request(self):
         d=dexd.Dexd()
