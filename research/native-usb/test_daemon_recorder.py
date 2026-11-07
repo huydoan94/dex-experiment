@@ -613,5 +613,22 @@ class ProfileTests(unittest.TestCase):
                 self.probe.select_profile()
 
 
+
+class SinkDropTests(unittest.TestCase):
+    def test_overflow_and_detach_drops_are_counted_apart(self):
+        import os
+        sink=daemon.DetachableSink("/nonexistent/ts.fifo",queue_bytes=2000)
+        sink.attached=True
+        sink.put(b"a"*1316)
+        sink.put(b"b"*1316)          # queue full while attached: real loss
+        sink._detach(os.open(os.devnull,os.O_WRONLY))  # the queued chunk had no receiver
+        sink.put(b"c"*188)           # no viewer: idle, not a drop
+        summary=sink.summary()
+        self.assertEqual((summary["dropped_chunks"],summary["dropped_bytes"]),(2,2632))
+        self.assertEqual((summary["overflow_dropped_chunks"],summary["overflow_dropped_bytes"]),(1,1316))
+        self.assertEqual((summary["detach_dropped_chunks"],summary["detach_dropped_bytes"]),(1,1316))
+        self.assertEqual(summary["idle_dropped_bytes"],188)
+
+
 if __name__=="__main__":
     unittest.main()

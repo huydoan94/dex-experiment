@@ -229,7 +229,9 @@ class Tests(unittest.TestCase):
                 return True
             with patch.object(long.LongSession,"wait",window):
                 self.assertTrue(s.wait(5))
-            self.assertIsInstance(s.input,daemon.InputReader)
+            # The window wraps the daemon reader in the waking (threaded) reader.
+            self.assertIsInstance(s.input,daemon.WakingInputReader)
+            self.assertIsInstance(s.input.reader,daemon.InputReader)
             self.assertIsNot(ks.InputReader,daemon.InputReader)
             self.assertEqual((streamed,bytes(s.rtsp_connection.received)),(["armed",True],PLAY_RESPONSE))
 

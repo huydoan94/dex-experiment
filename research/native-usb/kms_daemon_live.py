@@ -471,7 +471,9 @@ class DetachableSink:
     """live_sink.TsSink's put/close/summary contract for a FIFO whose reader comes and goes.
 
     No reader: put() drops (counted). A reader appears: forward. Its write fails:
-    detach and wait for the next one. error is set only for a fatal problem (the
+    detach and wait for the next one. dropped_* totals split into overflow (the
+    queue was full while a viewer was attached: real loss) and detach (chunks
+    still queued when the viewer left: nobody could receive them). error is set only for a fatal problem (the
     path is not a FIFO, or cannot be opened), which ends the session."""
     def __init__(self,path,queue_bytes=live_sink.QUEUE_BYTES,notify=lambda event:None,
                  poll_seconds=ATTACH_POLL_SECONDS):
@@ -480,6 +482,7 @@ class DetachableSink:
         self.queue=deque()
         self.queued_bytes=self.peak_bytes=0
         self.forwarded_bytes=self.dropped_bytes=self.dropped_chunks=self.idle_bytes=0
+        self.overflow_bytes=self.overflow_chunks=self.detach_bytes=self.detach_chunks=0
         self.attached=False
         self.attaches=self.detaches=0
         self.idle_since=time.monotonic()
@@ -515,6 +518,8 @@ class DetachableSink:
             if self.queued_bytes+len(data)>self.queue_limit:
                 self.dropped_bytes+=len(data)
                 self.dropped_chunks+=1
+                self.overflow_bytes+=len(data)
+                self.overflow_chunks+=1
                 return
             self.queue.append(bytes(data))
             self.queued_bytes+=len(data)
@@ -544,6 +549,8 @@ class DetachableSink:
             self.detaches+=1
             self.dropped_bytes+=self.queued_bytes
             self.dropped_chunks+=len(self.queue)
+            self.detach_bytes+=self.queued_bytes
+            self.detach_chunks+=len(self.queue)
             self.queue.clear()
             self.queued_bytes=0
         self.notify("viewer_detached")
@@ -606,7 +613,10 @@ class DetachableSink:
             return dict(opened=self.opened,attaches=self.attaches,detaches=self.detaches,
                         attached_at_end=self.attached,forwarded_bytes=self.forwarded_bytes,
                         idle_dropped_bytes=self.idle_bytes,dropped_bytes=self.dropped_bytes,
-                        dropped_chunks=self.dropped_chunks,queue_peak_bytes=self.peak_bytes,
+                        dropped_chunks=self.dropped_chunks,
+                        overflow_dropped_bytes=self.overflow_bytes,overflow_dropped_chunks=self.overflow_chunks,
+                        detach_dropped_bytes=self.detach_bytes,detach_dropped_chunks=self.detach_chunks,
+                        queue_peak_bytes=self.peak_bytes,
                         stopped=not self.thread.is_alive(),
                         error_type=type(self.error).__name__ if self.error else None)
 
