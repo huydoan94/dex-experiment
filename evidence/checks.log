@@ -1,0 +1,4 @@
+2026-11-07 evidence compacted; fixed problems summarised in docs/FIXES.md; full history kept outside this repository.
+2026-11-07 repository restructured (docs, evidence, research/native-usb, windows, android, scripts); research data and history kept outside this repository.
+2026-11-07 site-settings backend deployed: dexd 5bd8d74629b949bb95f5dcd6b853a140a7e57e893c006f0f615f9df14ab62754, tcp_control 5b7b82c364fc620a1f937c8c377a12191388649ff52c4359efb77b8fce0080e1, blackscreen.sh 42f6568251273ac57f671b4bf3b13242a42a8ad5a50d94447bbc9305591df808 (time zone and phone serial from a local config file); previous version kept as a rollback.
+2026-11-07 site-settings backend verified after a backend restart: black screen check OK with the configured serial, local-time logs, session streaming.

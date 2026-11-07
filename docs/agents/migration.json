@@ -1,0 +1,307 @@
+{
+ "schema_version": 1,
+ "updated": "2026-11-06",
+ "rows": [
+  {
+   "id": "usb-transfer-padding",
+   "scope": "transport",
+   "requirement": "Preserve padding after a whole batched USB transfer, including read boundaries.",
+   "baseline": "conn_transfer.TransferDecoder, installed by TransferSessions in the working Python media pipeline.",
+   "status": "verified",
+   "candidate": "Owned by the working Python pipeline. C implementation and gates are removed; archived C receipts are historical only.",
+   "evidence": [
+    "docs/LESSONS.md",
+    "docs/FIXES.md"
+   ],
+   "acceptance": "Preserve TransferDecoder behavior:1384+1008+1384+0x5a then next frame; lone pad read, partial frames, payload ending0x5a, invalid padding, timeout prefixes and ownership. No C build or sanitizer gate is required.",
+   "next_action": "Preserve the Python protocol behavior and saved lessons. C implementation and tests are dropped; no C migration work is pending."
+  },
+  {
+   "id": "usb-duplex-and-zlp",
+   "scope": "transport",
+   "requirement": "Keep USB IN service available while OUT completes; terminate exact full-packet OUT with ZLP; retain callback owners until drained.",
+   "baseline": "duplex_link.ReadPump and Link.write packet-boundary termination.",
+   "status": "verified",
+   "candidate": "Owned by the working Python pipeline. C implementation and gates are removed; archived C receipts are historical only.",
+   "evidence": [
+    "docs/LESSONS.md",
+    "docs/FIXES.md"
+   ],
+   "acceptance": "Preserve full/partial/failed writes, concurrent IN, ZLP, cancellation and callback-drain regressions. Do not widen the one-request window.",
+   "next_action": "Preserve the Python protocol behavior and saved lessons. C implementation and tests are dropped; no C migration work is pending."
+  },
+  {
+   "id": "cleanup-correlation",
+   "scope": "transport",
+   "requirement": "Disconnect learned keys, validate late Data ACK size once during cleanup, and refuse late incoming connects without losing response correlation. On cancellation, drive protocol TEARDOWN and learned-key cleanup before local USB callback cancellation when the connection permits; preserve in-flight request ownership.",
+   "baseline": "usb_tunnel.Session with cleanup-only late ACKs, accepted-key ownership and late Connect refusal.",
+   "status": "limited",
+   "candidate": "Owned by the working Python pipeline. C implementation and gates are removed; archived C receipts are historical only.",
+   "evidence": [
+    "docs/LESSONS.md",
+    "docs/FIXES.md"
+   ],
+   "acceptance": "Preserve the working Python learned-key/ACK correlation, bounded TEARDOWN, original failure, USB/input/reader release and normal next-session lifecycle. Prior C cancellation races remain historical; C gate and callback implementation are removed.",
+   "next_action": "Preserve the Python protocol behavior and saved lessons. C implementation and tests are dropped; no C migration work is pending."
+  },
+  {
+   "id": "automatic-confirmation-and-exclusion",
+   "scope": "startup",
+   "requirement": "Reuse established guarded display0 Start now through dexd; maintain exclusive viewer locks and one Python USB owner.",
+   "baseline": "ui_confirm_display0 with exact dialog/focus/freshness checks; native_guard pidfd exclusion and bounded resume lease.",
+   "status": "verified",
+   "candidate": "Owned by the working Python pipeline. C implementation and gates are removed; archived C receipts are historical only.",
+   "evidence": [
+    "docs/LESSONS.md",
+    "docs/FIXES.md"
+   ],
+   "acceptance": "No manual-readiness reinvention or competing USB owner. Preserve guarded confirmation, normal shutdown and the existing supervisor/backend lifecycle.",
+   "next_action": "Preserve the Python protocol behavior and saved lessons. C implementation and tests are dropped; no C migration work is pending."
+  },
+  {
+   "id": "listener-and-recovery",
+   "scope": "startup",
+   "requirement": "Preserve one-shot listener lifecycle; distinguish relisten from clearing stale native connections.",
+   "baseline": "dexd relisten, wait for one viewer, cleanup, host-owned restart/replug policy.",
+   "status": "limited",
+   "candidate": "Owned by the working Python pipeline. C implementation and gates are removed; archived C receipts are historical only. 2026-11-06: connect status 4/error 111 at session start after 4/21 restart cycles, 0/4 replug cycles; replug recovered. 2026-11-06: dexd requests a replug after every session (refusal 7/30 after restart-only cycles, 0/8 after replug; ready ~20 s).",
+   "evidence": [
+    "docs/LESSONS.md",
+    "docs/FIXES.md"
+   ],
+   "acceptance": "Manager existence is not listener proof; relisten is not a native-state reset; do not invent an18-minute expiry or perform unapproved recovery. Preserve the existing 45-second startup guard for the 60-second indication window; a full write and manager observation are insufficient. Named regressions: freshness boundaries, saved stale container, stale refusal before phone/supervisor access.",
+   "next_action": "Watch for connect refusal (status 4, error 111) after replug cycles; root cause still unknown."
+  },
+  {
+   "id": "udp-and-plain-profile",
+   "scope": "media",
+   "requirement": "Use UDP RTP/RTCP; accept scramble-enable metadata with the proven PcVer2.0.0.23 plain profile while validating TS.",
+   "baseline": "Python UDP media with plain profile; TCP-interleaved SETUP is known to crash remotedisplay.",
+   "status": "verified",
+   "candidate": "Owned by the working Python pipeline. C implementation and gates are removed; archived C receipts are historical only. 2026-11-07: scrambled profile in use (official PcVer 2.4.1.27); kms_daemon_live Descrambler XORs RTP bytes i>=12 with the uppercase-hex AUTH session key; plain stream still accepted (latch on TS sync). Verified session 232614: 151,146 descrambled, TS sync 100%.",
+   "evidence": [
+    "docs/LESSONS.md",
+    "docs/FIXES.md"
+   ],
+   "acceptance": "Bind46002/46003 before setup; retain source-port checks, RTP padding parsing and TS alignment/sync checks; no interleaved fallback.",
+   "next_action": "Keep UDP RTP/RTCP and the Descrambler; SCRAMBLED=False in kms_daemon_probe restores the plain profile."
+  },
+  {
+   "id": "media-window-and-teardown",
+   "scope": "media",
+   "requirement": "Keep bounded media and best-effort teardown, interpreting phone native close and RTSP200 distinctly.",
+   "baseline": "Long Python stream handles keepalives; earlier59-second close was client-triggered teardown, sometimes answered by native close.",
+   "status": "limited",
+   "candidate": "Owned by the working Python pipeline. C implementation and gates are removed; archived C receipts are historical only.",
+   "evidence": [
+    "docs/LESSONS.md",
+    "docs/FIXES.md"
+   ],
+   "acceptance": "Preserve first failure, teardown after empty/failed media where possible, and cleanup budgets. Full streaming parity must include keepalives/native-close handling; never lengthen a window as an unproven fix.",
+   "next_action": "Preserve the Python protocol behavior and saved lessons. C implementation and tests are dropped; no C migration work is pending."
+  },
+  {
+   "id": "native-output-and-picture",
+   "scope": "windows",
+   "requirement": "Connect the native Windows app to the proven Python backend with continuous media, ordered input and owned shutdown.",
+   "baseline": "Python pipeline already showed real1080p30 and AAC; native synthetic delivery is a separate milestone.",
+   "status": "limited",
+   "candidate": "User reported wrong/clipped glyphs during real window resize in2.6.4 export. Canonical dependency and lock now2.6.5, whose release notes document multi-adapter rendering-region fix. Build and synthetic playback/cancel pass; real OS-window resize/maximize/restore and toolbar/modal check pass on a single display adapter. Loaded runtime hash binds to2.6.5. Host confirmation pending. 2026-11-06 standalone export: double-click exe with bundled runtime, packaged settings/token (user request), icon, design-matched telemetry (synthetic screenshot). User (v4-v7, 2026-11-06): A/V smooth, UI clip fixed; v7 adds cursor shapes (4/4 relayed live in user session 232614).",
+   "evidence": [
+    "evidence/README.md",
+    "evidence/results.json",
+    "docs/LESSONS.md"
+   ],
+   "acceptance": "Continuous live H264/AAC and input through the existing Python backend, native presentation/audio/focus loss, bounded shutdown and subsequent-session reuse. Synthetic build machine reports cannot establish live phone acceptance.",
+   "next_action": "Current user export DexClient-Windows-x64-20261106-v7-standalone.zip (not in this repository) (SHA256 7e6f9d9c...66ca). Physical display/latency acceptance remains open; v3-v6 exports are superseded."
+  },
+  {
+   "id": "input-working-baseline",
+   "scope": "input",
+   "requirement": "Preserve SideSync KMS mouse/keyboard, coordinate mapping, held-input release and client cursor behavior.",
+   "baseline": "kms_session_live/dexd and dex_desktop; USB DeX input uses KMS30830, not WFD UIBC display0.",
+   "status": "limited",
+   "candidate": "Owned by the working Python pipeline. C implementation and gates are removed; archived C receipts are historical only.",
+   "evidence": [
+    "evidence/README.md",
+    "evidence/results.json",
+    "docs/LESSONS.md"
+   ],
+   "acceptance": "KMS client speaks first; exact scancode/event mapping; no input before picture; ordered buttons/keys; releases on focus loss/error/close; no coordinates/key content logged.",
+   "next_action": "Preserve the Python protocol behavior and saved lessons. C implementation and tests are dropped; no C migration work is pending."
+  },
+  {
+   "id": "diagnostic-collection",
+   "scope": "diagnostics",
+   "requirement": "Match collector tags/time range to the fault and validate actual ADB encoding; do not equate empty filtered output with no failure.",
+   "baseline": "Corrected KMS collector4acb6abc; separate WFD/codec retained collection found sender crash and encoder timing.",
+   "status": "limited",
+   "candidate": "Owned by the working Python pipeline. C implementation and gates are removed; archived C receipts are historical only.",
+   "evidence": [
+    "docs/LESSONS.md",
+    "docs/FIXES.md"
+   ],
+   "acceptance": "Name the unanswered distinction, exact relevant tags, target timestamp window, byte/time bounds and missing-record limitations; real installed-ADB fake-server regression for argument encoding.",
+   "next_action": "Preserve the Python protocol behavior and saved lessons. C implementation and tests are dropped; no C migration work is pending."
+  },
+  {
+   "id": "jitter-and-latency",
+   "scope": "performance",
+   "requirement": "Measure heartbeat/ACK/RTP and viewer timing before claiming a scheduler or latency improvement.",
+   "baseline": "Working Python viewer has opt-in frame timing; historical user observations are approximately1s jitter and150ms response.",
+   "status": "limited",
+   "candidate": "Normal-session evidence: reducing routine tracing window60s to3s brings first-minute keyframe median138.59ms to94.25ms; quiet baseline94.15ms. Periodic gaps remain. No optical claim. 2026-11-06 deployed DaemonRecorder (backend owner CPU 91-96->64us/datagram); live A/B one session each: keyframe median 93.89->91.43ms, gaps>100ms 53->51, IN queue peak unchanged ~260KB. Owner CPU is not the keyframe bottleneck. 2026-11-06 async USB: pipelined OUT + 8x16 KB async IN; viewer keyframe span 93->44 ms, video gaps>100 ms 52->3, audio 30->2 (one 60 s session per build; static desktop). Client v6/v7: WASAPI 20 ms, adaptive audio target (settled 80 ms), Low-latency video; user-observed input lag ~150 ms -> improved. Backend input wake deployed. User session 232614: USB IN backlog p99 6.5 ms (max 22 ms); OUT write queue queued-to-done p99 96 ms, max 258 ms, peak 376 writes (ACKs and input share one writer).",
+   "evidence": [
+    "evidence/README.md",
+    "evidence/results.json",
+    "docs/LESSONS.md",
+    "evidence/checks.log"
+   ],
+   "acceptance": "Correlate monotonic timing and queue depth; report local stage distributions, separate startup and steady state, and avoid subtracting unsynchronized clocks.",
+   "next_action": "Async OUT deployed and user-accepted (p99 8.4 ms at light load); measure one heavy-traffic session when convenient."
+  },
+  {
+   "id": "python-input-backpressure",
+   "scope": "input",
+   "requirement": "Keep rendering responsive during input transport stalls, preserve discrete input order and release on loss of ownership.",
+   "baseline": "Existing scripts/viewer/dex_desktop.py and the documented dexd Python lifecycle.",
+   "status": "limited",
+   "candidate": "Canonical FIFO worker deployed under explicit remaining-work authorization; normal60.1s live session passed with hover/Shift, queue peak3, worker stopped, no held keys/errors;17 daemon/FIFO and7 worker tests pass.",
+   "evidence": [
+    "evidence/README.md",
+    "evidence/results.json",
+    "docs/LESSONS.md"
+   ],
+   "acceptance": "Focused regressions pass; verify real input/display/session close behavior under a fresh appropriate phone grant before claiming live improvement.",
+   "next_action": "Python viewer (scripts/viewer, .venv) kept as fallback; the v7 Windows client is the main viewer. No session scheduled."
+  },
+  {
+   "id": "python-viewer-lifetime",
+   "scope": "startup",
+   "requirement": "Clean partial viewer startup and GUI/decoder errors without leaving owned children or stale input ownership.",
+   "baseline": "Existing scripts/viewer/dex_desktop.py and the documented dexd Python lifecycle.",
+   "status": "limited",
+   "candidate": "Direct gateway pair/partial startup, EOF, busy owner/locks pass local regressions. Real direct session cleanly released USB, input, app/task; normal cycle restored managed gateway/black-screen idle. Abnormal real-network failure and sustained acceptance remain limited.",
+   "evidence": [
+    "evidence/README.md",
+    "evidence/results.json",
+    "docs/LESSONS.md"
+   ],
+   "acceptance": "Focused regressions pass; verify real input/display/session close behavior under a fresh appropriate phone grant before claiming live improvement.",
+   "next_action": "Python viewer (scripts/viewer, .venv) kept as fallback; the v7 Windows client is the main viewer. No session scheduled."
+  },
+  {
+   "id": "python-rgb-presentation",
+   "scope": "media",
+   "requirement": "Avoid the unnecessary full RGB copy while retaining decoded-buffer lifetime and the existing H264/AAC path.",
+   "baseline": "Existing scripts/viewer/dex_desktop.py and the documented dexd Python lifecycle.",
+   "status": "limited",
+   "candidate": "Implemented and offline-tested in the existing Python viewer; live phone/Windows acceptance remains unverified.",
+   "evidence": [
+    "evidence/README.md",
+    "evidence/results.json",
+    "docs/LESSONS.md"
+   ],
+   "acceptance": "Focused regressions pass; verify real input/display/session close behavior under a fresh appropriate phone grant before claiming live improvement.",
+   "next_action": "Reuse passing offline evidence; do not touch the phone or deploy without a new appropriate grant."
+  },
+  {
+   "id": "native-direct-tls",
+   "scope": "transport",
+   "requirement": "Use DNS <backend-host> with independent authenticated media/input connections and no SSH in the app; preserve FIFO ownership and normal backend cleanup.",
+   "baseline": "Working dexd/TransferDecoder pipeline and Python viewer; previous native client shared one SSH transport.",
+   "status": "limited",
+   "candidate": "Direct TLS DNS native session passed615video/1039audio/310input, normal cleanup and next managed-gateway cycle/auth. Nine offline TLS/FIFO/.NET and48 Windows media/TLS checks pass. Long-term/physical-quality acceptance remains open. 2026-11-06: gateway marks DSCP 41 (tos 0xa4 verified live); jitter-buffer client v2 passed native session: audio drops/underrun 646144/4173056 -> 0/2816, resync 2->0, presented p99 69->54ms.",
+   "evidence": [
+    "evidence/README.md",
+    "evidence/results.json",
+    "docs/LESSONS.md"
+   ],
+   "acceptance": "Live H264/AAC and ordered input; idle/input/idle timing, full cleanup, normal cycle and next gateway ready. Offline checks alone do not establish hiccup repair.",
+   "next_action": "User runs v7 standalone daily; scrambled RTP (official PcVer 2.4.1.27) verified in user session 232614. Physical audio/display acceptance remains open."
+  }
+ ],
+ "delivery": {
+  "objective": "Improve the working Python implementation and connect it to the native Windows app, covering latency/smoothness, reliability and input/viewer usability; C backend implementation is dropped.",
+  "contract": "docs/agents/EXECUTION_CONTRACT.md",
+  "accepted": false,
+  "required_scopes": [
+   "transport",
+   "startup",
+   "media",
+   "input",
+   "diagnostics",
+   "windows",
+   "performance"
+  ],
+  "completion_criteria": [
+   "Native Windows client connects to the existing Python backend and supports continuous H264/AAC, keyboard/mouse, focus release and orderly shutdown/reuse on a real authorized session.",
+   "Measured live latency/smoothness improves against the documented Python baseline, with the actual periodic-stutter cause established.",
+   "Viewer remains responsive under input backpressure while preserving key/button order and releasing held input on focus loss and shutdown.",
+   "Existing startup, automatic Start now, black screen, H264/AAC, single USB owner, orderly cleanup and subsequent sessions remain working.",
+   "Windows presentation/audio and live input effects are accepted separately from local synthetic tests."
+  ],
+  "remaining_work": [
+   "User report 2026-11-06: continuous A/V stutter with crackle in all versions; jitter-buffer client v2 fixed the Windows build machine counters (drops/underrun ~0). Physical confirmation on the user's PC pending.",
+   "Direct TLS idle/input/idle session passed:310 inputs, input-phase max presented gap78.33ms vs116.02ms idle before. Periodic decode/audio gaps persist; no old-SSH matched control or all-hiccup repair claim. User trial of unchanged direct export is next.",
+   "Measure optical end-to-end latency and obtain human observation of physical display/audio and OS/keyboard/device focus behavior. Software timing and131mapping cases do not establish these.",
+   "Accept sustained real-network overload/input-stall policy; the reconnect run had a retained428ms encoded-arrival/338ms upload transient, while all sessions cleaned up without held input.",
+   "Direct TLS pipeline passed real H264/AAC, hover/Shift, full cleanup, normal relisten/black-screen/gateway restart and DNS authentication. Physical quality/device behavior, sustained overload, periodic gaps and audio drop/underrun counters remain open."
+  ],
+  "pending_phone_request": null,
+  "phone_request_status": "none",
+  "independent_authorized_work": [
+   "Standalone client ZIP (jitter buffer, icon, design telemetry, packaged token) and DSCP 41 gateway delivered; user trial is next.",
+   "Backend: DaemonRecorder and DSCP gateway deployed; rollback copies in backend before-deployment and before-dscp."
+  ],
+  "follow_on_project_work": [
+   "Clipboard synchronization remains separately scoped and requires explicit phone authorization."
+  ],
+  "acceptance_evidence": [
+   "evidence/README.md",
+   "evidence/results.json",
+   "docs/FIXES.md"
+  ],
+  "source_parity_review": "evidence/native-parity-close-20261105/README.md",
+  "phone_attempts": [
+   {
+    "result": "docs/FIXES.md",
+    "consumed": true,
+    "sessions_used": 1,
+    "outcome": "Last direct TLS session passed complete cleanup and next normal cycle; broad grant persists. Earlier exact grants/results are in archived original migration.json."
+   }
+  ],
+  "work_status": "session_closed_20261106_user_trial_next",
+  "scope_change": "User2026-11-05: Forget about C; improve Python(All), then native Windows integration. User2026-11-06: fix input-triggered A/V hiccup; drop SSH from app, endpoint <backend-host> rather than static IP. User2026-11-06: drop the C implementation entirely; retain Python backend and C# WinUI client.",
+  "historical_native_delivery": "docs/FIXES.md",
+  "export": {
+   "archive": "(superseded direct.zip, removed 2026-11-07)",
+   "evidence": "evidence/README.md",
+   "sha256": "25fd7772c910ee82ab9f61e0d3c3056d1aaa267a2bec5efffdbf7a58d84e5302",
+   "credentials_included": false,
+   "endpoint": "<backend-host>:7443",
+   "ssh_dependency": false,
+   "real_input_hiccup_verified": false,
+   "live_input_load_passed": true
+  },
+  "live_check_waiting_for": null,
+  "phone_plan_execution": "Completed one session; broad grant persists, no further session scheduled.",
+  "authorization": "User broad remaining-work grant persists. Last direct session completed after user confirmed Disconnected and closed. No further session scheduled. Explain complete bounds before any new live action.",
+  "documentation": "Local and remote consolidation completed2026-11-06. Backend C candidates/toolchain removed; Python pins/runtime preserved. build machine obsolete exports/prototypes removed; current app/ZIP and51 source hashes verified. Remote cleanup metadata in evidence/results.json.",
+  "c_backend": "dropped; implementation/build/tests removed, historical records archived",
+  "session_close": {
+   "date": "2026-11-06",
+   "user_instruction": "Update the docs in here and handoff and such. We are closing for today",
+   "state": "closed for today; no further work scheduled",
+   "next": "User trial of unchanged live-tested direct Windows ZIP, then concrete symptom-driven fixes",
+   "remote_or_phone_actions_on_close": false
+  }
+ },
+ "active_user_task": {
+  "date": "2026-11-07",
+  "request": "Wrap up and lock the accepted state, clean up code, files and docs, prepare the repository for publication.",
+  "status": "completed",
+  "record": "evidence/results.json -> maintenance/lock-cleanup-20261107",
+  "next_action": "No open task. New work starts from a new user request."
+ }
+}

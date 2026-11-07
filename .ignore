@@ -1,0 +1,9 @@
+build/
+research/native-usb/native/build/
+archive/
+.venv/
+a private command log
+docs/lab-files.sha256
+the private settings
+samsung-research/
+releases/

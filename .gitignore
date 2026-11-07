@@ -1,0 +1,25 @@
+# Never commit.
+the private settings
+a private command log
+archive/
+releases/
+*.zip
+*.pem
+*.key
+*.keystore
+gateway-token
+backend.json
+
+# Generated or downloaded.
+.venv/
+build/
+__pycache__/
+*.pyc
+windows/**/bin/
+windows/**/obj/
+windows/packages/
+android/blackscreen/build/
+research/native-usb/dexd/
+research/native-usb/relisten-*/
+research/native-usb/efficiency-*/
+research/native-usb/reconnect-*
