@@ -11,6 +11,7 @@ Type=simple
 User=dex
 Group=dex
 WorkingDirectory=/home/dex/dex-experiment
+# Local time zone and phone serial: ~/.config/dex-gateway/site.json (private).
 Environment=PYTHONPATH=/home/dex/dex-experiment/tools/crypto-root/usr/lib/python3/dist-packages:/home/dex/dex-experiment/tools/usb-root/usr/lib/python3/dist-packages
 ExecStart=/usr/bin/python3 -u /home/dex/dex-experiment/research/native-usb/dexd.py
 # /run/dex-run (0700, dex): FIFOs and viewer locks; removed when dexd stops.

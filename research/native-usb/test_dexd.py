@@ -324,6 +324,7 @@ class Tests(unittest.TestCase):
                 dexd.Dexd().ensure_blackscreen()
             self.assertEqual(calls,expected)
         source=Path(dexd.__file__).read_text()
+        self.assertNotRegex(source,r"\b(?:Africa|America|Antarctica|Asia|Atlantic|Australia|Europe|Indian|Pacific)/")   # site timezone is private configuration
         for command in ("stop","uninstall","force-stop"):
             self.assertNotIn('adb("%s")'%command,source)
             self.assertNotIn(command+'"]',source.replace("killpg",""))
@@ -339,3 +340,26 @@ class Tests(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+
+
+class SiteSettingsTests(unittest.TestCase):
+    def test_private_settings_are_read_filtered_and_optional(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"site.json"
+            self.assertEqual(dexd.site_settings(path),{})
+            path.write_text('{"timezone":"Etc/UTC","phone_serial":"ABC123","other":1,"phone_serial2":""}')
+            self.assertEqual(dexd.site_settings(path),{"timezone":"Etc/UTC","phone_serial":"ABC123"})
+            path.write_text("not json")
+            self.assertEqual(dexd.site_settings(path),{})
+
+    def test_black_screen_gets_the_serial_only_through_the_environment(self):
+        seen=[]
+        def run(argv,**kw):
+            seen.append(kw["env"].get("DEX_PHONE_SERIAL"));return subprocess.CompletedProcess(argv,0,"","")
+        with patch.object(dexd,"site_settings",lambda path=None:{"phone_serial":"ABC123"}),patch.object(dexd.subprocess,"run",run):
+            dexd.Dexd().ensure_blackscreen()
+        self.assertEqual(seen,["ABC123"])
+        script=(Path(dexd.__file__).parent/"blackscreen/blackscreen.sh").read_text()
+        self.assertIn('${serial:+-s "$serial"}',script)
+        self.assertNotRegex(script,r"-s [A-Z0-9]{8,}")
+

@@ -12,7 +12,10 @@ here=$(cd "$(dirname "$0")" && pwd)
 apk=$here/blackscreen.apk
 pinned=7b99d724d6c046d392889d595f92cf00cf2365db0f89e258c27ea6d31fe68621
 pkg=app.blackscreen
-adb=(/usr/bin/adb -H 127.0.0.1 -P 5037)
+# DEX_PHONE_SERIAL comes from dexd's private site settings; without it adb uses the
+# single attached phone (dexd only runs with exactly one).
+serial=${DEX_PHONE_SERIAL:-}
+adb=(/usr/bin/adb -H 127.0.0.1 -P 5037 ${serial:+-s "$serial"})
 call() { echo "+ adb $*"; timeout -k 2 30 "${adb[@]}" "$@" < /dev/null; }
 case "${1:-plan}" in
     install)
