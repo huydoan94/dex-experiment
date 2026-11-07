@@ -312,8 +312,93 @@ class AsyncInTests(unittest.TestCase):
         self.assertEqual(owner.result["duplex_usb"]["async_in"]["inflight"],0)
 
 
-if __name__=="__main__":
-    unittest.main()
+
+KEY=bytes(range(32))
+
+
+def official_scramble(packet,key=KEY):
+    """Independent reference: SamsungDeX.exe RTPSocket receive XOR, byte by byte."""
+    text=bytearray(packet)
+    ascii_key=b"000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F"
+    assert ascii_key==key.hex().upper().encode()
+    for i in range(12,len(text)):
+        text[i]^=ascii_key[i%len(ascii_key)]
+    return bytes(text)
+
+
+def rtp(sequence,payload_bytes=1316):
+    header=struct.pack(">BBHII",0x80,33,sequence,sequence*3000,7)
+    ts=b"".join(b"\x47"+bytes([sequence&0xff,i])*93+b"\x01" for i in range((payload_bytes-12)//188))
+    return header+ts
+
+
+def data_frame(payload,config=None):
+    config=play.RTP_CONFIG if config is None else config
+    body=tcp._DATA.pack(17,config,2,play.RTP_PORT,50000,play.RTP_PORT,play.RTP_PORT,
+                        tcp._DATA_HEADER_BYTES,len(payload))+payload
+    return Frame(5,1,9,body)
+
+
+class DescramblerTests(unittest.TestCase):
+    def test_known_vector_uses_uppercase_hex_key_from_byte_twelve(self):
+        packet=bytes(12)+b"\x00"*4
+        # Bytes 12..15 XOR key[12..15] = b"0607" ("06","07" of the uppercase hex key).
+        self.assertEqual(daemon.Descrambler(KEY).descramble(packet),bytes(12)+b"0607")
+        self.assertEqual(daemon.Descrambler(KEY).descramble(bytes(12)),bytes(12))
+        tail=bytes(12)+b"\x00"*(64-12+8)
+        # Index i keeps the absolute packet offset: offset 64 restarts the key at "00".
+        self.assertEqual(daemon.Descrambler(KEY).descramble(tail)[64:72],b"00010203")
+
+    def test_scrambled_stream_latches_and_matches_the_reference(self):
+        d=daemon.Descrambler(KEY)
+        for sequence,size in enumerate((1316,1328,200,1500)):
+            clear=rtp(sequence,size)
+            self.assertEqual(d.packet(official_scramble(clear)),clear)
+        self.assertEqual(d.summary(),dict(mode="scrambled",descrambled=4,undecided=0))
+
+    def test_plain_stream_is_left_untouched(self):
+        d=daemon.Descrambler(KEY)
+        for sequence in range(3):
+            clear=rtp(sequence)
+            self.assertIs(d.packet(clear),clear)
+        self.assertEqual(d.summary(),dict(mode="plain",descrambled=0,undecided=0))
+
+    def test_undecidable_packets_pass_until_one_decides(self):
+        d=daemon.Descrambler(KEY)
+        junk=struct.pack(">BBHII",0x80,33,1,0,7)+b"\x00"*40
+        self.assertIs(d.packet(junk),junk)
+        self.assertIsNone(d.mode)
+        clear=rtp(2)
+        self.assertEqual(d.packet(official_scramble(clear)),clear)
+        self.assertEqual(d.summary(),dict(mode="scrambled",descrambled=1,undecided=1))
+
+    def test_frame_descrambles_only_rtp_data_and_keeps_the_header(self):
+        d=daemon.Descrambler(KEY)
+        clear=rtp(5)
+        frame=d.frame(data_frame(official_scramble(clear)))
+        self.assertEqual(frame.body,data_frame(clear).body)
+        self.assertEqual((frame.command,frame.kind,frame.transaction),(5,1,9))
+        other=data_frame(official_scramble(clear),config=play.RTCP_CONFIG)
+        self.assertIs(d.frame(other),other)
+
+    def test_key_is_validated_and_never_shown(self):
+        with self.assertRaises(ValueError):
+            daemon.Descrambler(KEY[:16])
+        d=daemon.Descrambler(KEY)
+        self.assertNotIn("0A0B",repr(d)+str(d.summary()))
+
+    def test_session_descrambles_before_the_inherited_handler(self):
+        seen=[]
+        session=object.__new__(daemon.DaemonSession)
+        session.descrambler=daemon.Descrambler(KEY)
+        clear=rtp(7)
+        with patch.object(daemon.base.SessionInput,"_phone_datagram",create=True,
+                          side_effect=lambda frame: seen.append(frame.body)):
+            daemon.DaemonSession._phone_datagram(session,data_frame(official_scramble(clear)))
+            session.descrambler=None
+            daemon.DaemonSession._phone_datagram(session,data_frame(clear))
+        self.assertEqual(seen,[data_frame(clear).body]*2)
+
 
 
 class WakingInputTests(unittest.TestCase):
@@ -499,3 +584,34 @@ class CursorRelayTests(unittest.TestCase):
         broken=daemon.CursorRelay(self.path)
         broken.feed(b"\x09\x64\x00\x08xxxx"+cursor(1002))
         self.assertEqual((broken.error,broken.pending),("invalid frame header",None))
+
+
+
+class ProfileTests(unittest.TestCase):
+    def setUp(self):
+        import capabilities_probe as cap
+        import kms_daemon_probe as probe
+        self.cap,self.probe=cap,probe
+        saved=cap.PROFILE
+        self.addCleanup(setattr,cap,"PROFILE",saved)
+
+    def test_scrambled_profile_reports_the_official_version_even_after_a_plain_probe(self):
+        live=self.probe.rtsp_udp_live
+        for start in (live.BASE_PC_VERSION,live.PLAIN_PC_VERSION):
+            self.cap.PROFILE=dict(self.cap.PROFILE,PcVer=start)
+            with patch.object(self.probe,"SCRAMBLED",True):
+                self.probe.select_profile()
+            self.assertEqual(self.cap.PROFILE["PcVer"],live.BASE_PC_VERSION)
+        with patch.object(self.probe,"SCRAMBLED",False):
+            self.probe.select_profile()
+        self.assertEqual(self.cap.PROFILE["PcVer"],live.PLAIN_PC_VERSION)
+
+    def test_other_profiles_are_refused(self):
+        for change in (dict(PcVer="2.5.0.0"),dict(SinkType="MAC")):
+            self.cap.PROFILE={**self.cap.PROFILE,"PcVer":self.probe.rtsp_udp_live.BASE_PC_VERSION,**change}
+            with self.subTest(change=change),self.assertRaises(RuntimeError):
+                self.probe.select_profile()
+
+
+if __name__=="__main__":
+    unittest.main()
