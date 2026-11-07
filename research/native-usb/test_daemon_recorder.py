@@ -753,5 +753,104 @@ class AsyncOutTests(unittest.TestCase):
         session.usb_timing.stop_writer()
 
 
+
+PLAY_REQ=b"PLAY rtsp://phone.invalid/wfd1.0/streamid=0 RTSP/1.0\r\nCSeq: 3\r\nSession: 6B8B4567\r\n\r\n"
+
+
+def rtsp_reply(cseq,status=200):
+    return ("RTSP/1.0 %d OK\r\nCSeq: %d\r\n\r\n"%(status,cseq)).encode()
+
+
+class PauseControlTests(unittest.TestCase):
+    def control(self):
+        c=daemon.PauseControl();c.learn_play(PLAY_REQ);return c
+
+    def test_learns_uri_and_session_and_builds_requests(self):
+        c=self.control()
+        self.assertEqual((c.uri,c.session_id),("rtsp://phone.invalid/wfd1.0/streamid=0","6B8B4567"))
+        self.assertEqual(c.request("PAUSE",101),
+            b"PAUSE rtsp://phone.invalid/wfd1.0/streamid=0 RTSP/1.0\r\nCSeq: 101\r\nSession: 6B8B4567\r\n\r\n")
+        self.assertIsNone(daemon.PauseControl().step(0,False,True,[],0))   # no PLAY seen: never acts
+
+    def test_full_pause_resume_cycle(self):
+        c=self.control()
+        self.assertIsNone(c.step(0,True,False,[],10))                     # viewer there
+        self.assertEqual(c.step(1,False,True,[],10),("PAUSE",101))        # gone past grace
+        self.assertIsNone(c.step(1.5,True,False,[],10))                    # one request at a time
+        self.assertIsNone(c.step(1.6,False,True,[(101,200)],10))
+        self.assertEqual((c.state,c.pauses,c.take_notes()),("paused",1,["paused"]))
+        self.assertEqual(c.step(9,True,False,[],10),("PLAY",102))
+        self.assertIsNone(c.step(9.1,True,False,[(102,200)],10))
+        self.assertEqual((c.state,c.resumes,c.take_notes()),("playing",1,["resumed"]))
+        self.assertIsNone(c.step(9.4,True,False,[],11))                    # first RTP after PLAY
+        self.assertEqual(c.summary()["resume_ms"],[400])
+        self.assertEqual(c.take_notes(),["media_after_resume ms=400"])
+        self.assertEqual(c.summary()["paused_seconds"],7.4)
+        self.assertEqual(c.step(20,False,True,[],50),("PAUSE",103))        # leaves again
+
+    def test_viewer_back_while_pausing_resumes_right_after_the_reply(self):
+        c=self.control();c.step(0,False,True,[],0)
+        self.assertEqual(c.step(.2,True,False,[(101,200)],0),("PLAY",102))
+
+    def test_failures_end_the_session_the_old_way(self):
+        c=self.control();c.step(0,False,True,[],0)
+        self.assertIsNone(c.step(daemon.RTSP_REPLY_SECONDS,False,True,[],0))
+        self.assertEqual(c.failure,"pause_no_reply")
+        c=self.control();c.step(0,False,True,[],0);c.step(.1,False,True,[(101,455)],0)
+        self.assertEqual(c.failure,"pause_status_455")
+        c=self.control();c.step(0,False,True,[],0);c.step(.1,False,True,[(101,200)],0)
+        c.step(1,True,False,[],0);c.step(1.1,True,False,[(102,200)],0)
+        self.assertIsNone(c.failure)
+        c.step(1+daemon.RESUME_MEDIA_SECONDS,True,False,[],0)
+        self.assertEqual(c.failure,"resume_no_media")
+        self.assertIsNone(c.step(99,False,True,[],0))                      # nothing after a failure
+
+
+class PauseSessionTests(unittest.TestCase):
+    def session(self,attached,absent_seconds):
+        sent=[];notes=[]
+        session=object.__new__(daemon.DaemonSession)
+        session.window_open,session.cleanup=True,False
+        session.rtsp_connection=SimpleNamespace(received=bytearray())
+        session.keepalive_offset=0
+        session.media_counts=Counter({play.RTP_CONFIG:5})
+        session.sink=SimpleNamespace(attached=attached,unattached_seconds=lambda:absent_seconds,
+                                     notify=notes.append,error=None)
+        session.clock=lambda:session.now
+        session.now=100.0
+        session.log=lambda event,**fields:None
+        session.stop_file="/nonexistent/stop";session.terminate_requested=False;session.stop_reason=None
+        session.window_started=None;session.kms_connection=None
+        with patch.object(daemon.base.SessionInput,"send",create=True,
+                          side_effect=lambda conn,data,timeout_s=5:sent.append(bytes(data))):
+            daemon.DaemonSession.send(session,session.rtsp_connection,PLAY_REQ)
+        return session,sent,notes
+
+    def run_slice(self,session,sent):
+        with patch.object(daemon.base.SessionInput,"send",create=True,
+                          side_effect=lambda conn,data,timeout_s=5:sent.append(bytes(data))):
+            session._pause_or_resume()
+
+    def test_absent_viewer_pauses_and_returning_viewer_resumes(self):
+        session,sent,notes=self.session(False,daemon.VIEWER_GRACE_SECONDS)
+        self.run_slice(session,sent)
+        self.assertTrue(sent[-1].startswith(b"PAUSE rtsp://phone.invalid/wfd1.0/streamid=0 RTSP/1.0\r\nCSeq: 101"))
+        session.rtsp_connection.received+=rtsp_reply(101)
+        session.sink.attached=True;session.sink.unattached_seconds=lambda:0
+        self.run_slice(session,sent)
+        self.assertEqual(notes,["paused"])
+        self.assertTrue(sent[-1].startswith(b"PLAY ") and b"CSeq: 102" in sent[-1])
+        self.assertFalse(daemon.DaemonSession.stop_requested(session))   # a viewer leaving no longer ends it
+
+    def test_a_failed_pause_stops_the_window(self):
+        session,sent,notes=self.session(False,daemon.VIEWER_GRACE_SECONDS)
+        self.run_slice(session,sent)
+        session.rtsp_connection.received+=rtsp_reply(101,500)
+        self.run_slice(session,sent)
+        self.assertTrue(daemon.DaemonSession.stop_requested(session))
+        self.assertEqual(session.stop_reason,"pause_status_500")
+        self.assertEqual(notes,["pause_failed reason=pause_status_500"])
+
+
 if __name__=="__main__":
     unittest.main()

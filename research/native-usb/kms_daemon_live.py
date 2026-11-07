@@ -51,6 +51,17 @@ RTSP_SEEN_KEEP=64
 ATTACH_POLL_SECONDS=.5
 # The window ends once no viewer has been attached this long (also if none ever attached).
 VIEWER_GRACE_SECONDS=5
+# Pause instead of ending (user 2026-11-07): once no viewer has been attached for
+# VIEWER_GRACE_SECONDS the phone gets RTSP PAUSE on the live RTSP connection, and
+# RTSP PLAY when a viewer attaches again. USB, KMS and RTSP stay up, so a
+# reconnect skips the ~20 s replug cycle. The official PC app sends the same
+# PAUSE/PLAY (SamsungDeX.exe RTSPSocket::wfd_send_pause/play, used by its
+# RTSPErrorRecoverThread). A missing/failed reply or no media after PLAY ends the
+# session the old way (TEARDOWN, cleanup, replug). No time limit while paused.
+RTSP_REPLY_SECONDS=10
+RESUME_MEDIA_SECONDS=30
+PAUSE_CSEQ_START=100
+PAUSE_LATENCY_KEEP=50
 # After the first minute every per-frame USB event is counted instead of written.
 QUIET_EVENTS=long.ROUTINE|{"usb_raw","usb_frame_in","usb_frame_in_data","usb_in_unparsed"}
 
@@ -1038,6 +1049,99 @@ class Descrambler:
         return dict(mode=self.mode,descrambled=self.descrambled,undecided=self.undecided)
 
 
+class PauseControl:
+    """RTSP PAUSE/PLAY decisions for one session; the session sends what step() returns.
+
+    States: playing -> pausing (PAUSE sent) -> paused -> resuming (PLAY sent) -> playing.
+    A request is sent only after the previous one was answered, so the phone never
+    sees two outstanding. The PLAY that started the media gives the URI and Session."""
+    def __init__(self):
+        self.uri=self.session_id=None
+        self.state="playing"
+        self.cseq=PAUSE_CSEQ_START
+        self.pending=None          # (method,cseq,sent_at)
+        self.resumed_at=None       # waiting for the first RTP after a PLAY
+        self.rtp_at_resume=0
+        self.failure=None
+        self.pauses=self.resumes=0
+        self.resume_ms=deque(maxlen=PAUSE_LATENCY_KEEP)
+        self.paused_seconds=0.0
+        self.paused_at=None
+        self.notes=[]
+
+    def learn_play(self,data):
+        if self.uri is not None:
+            return
+        lines=data.decode("ascii","replace").split("\r\n")
+        self.uri=lines[0].split(" ")[1] if len(lines[0].split(" "))>2 else None
+        for line in lines[1:]:
+            name,_,value=line.partition(":")
+            if name.strip().lower()=="session":
+                self.session_id=value.strip().split(";")[0]
+
+    def request(self,method,cseq):
+        return ("%s %s RTSP/1.0\r\nCSeq: %d\r\nSession: %s\r\n\r\n"%(
+            method,self.uri,cseq,self.session_id)).encode("ascii")
+
+    def _fail(self,reason):
+        self.failure=reason
+        self.notes.append("pause_failed reason=%s"%reason)
+
+    def step(self,now,attached,absent,responses,rtp_count):
+        """Returns (method,cseq) to send now, or None."""
+        if self.failure is not None or self.uri is None or self.session_id is None:
+            return None
+        if self.pending is not None:
+            method,cseq,sent=self.pending
+            status=next((st for cs,st in responses if cs==cseq),None)
+            if status is None:
+                if now-sent>=RTSP_REPLY_SECONDS:
+                    self._fail("%s_no_reply"%method.lower())
+                return None
+            if status!=200:
+                self._fail("%s_status_%d"%(method.lower(),status))
+                return None
+            self.pending=None
+            if method=="PAUSE":
+                self.state,self.paused_at="paused",now
+                self.pauses+=1
+                self.notes.append("paused")
+            else:
+                self.state,self.resumed_at,self.rtp_at_resume="playing",sent,rtp_count
+                self.resumes+=1
+                if self.paused_at is not None:
+                    self.paused_seconds+=sent-self.paused_at
+                    self.paused_at=None
+                self.notes.append("resumed")
+        if self.resumed_at is not None:
+            if rtp_count>self.rtp_at_resume:
+                self.resume_ms.append(round((now-self.resumed_at)*1000))
+                self.notes.append("media_after_resume ms=%d"%self.resume_ms[-1])
+                self.resumed_at=None
+            elif now-self.resumed_at>=RESUME_MEDIA_SECONDS:
+                self._fail("resume_no_media")
+                return None
+        if self.state=="playing" and absent and self.resumed_at is None:
+            return self._send("PAUSE",now)
+        if self.state=="paused" and attached:
+            return self._send("PLAY",now)
+        return None
+
+    def _send(self,method,now):
+        self.cseq+=1
+        self.pending=(method,self.cseq,now)
+        self.state="pausing" if method=="PAUSE" else "resuming"
+        return (method,self.cseq)
+
+    def take_notes(self):
+        notes,self.notes=self.notes,[]
+        return notes
+
+    def summary(self):
+        return dict(state=self.state,pauses=self.pauses,resumes=self.resumes,failure=self.failure,
+                    paused_seconds=round(self.paused_seconds,1),resume_ms=list(self.resume_ms))
+
+
 class DaemonSession(base.SessionInput):
     def __init__(self,*args,on_streaming=lambda:None,**kwargs):
         super().__init__(*args,**kwargs)
@@ -1051,6 +1155,7 @@ class DaemonSession(base.SessionInput):
         self.cursor=None
         # Set by kms_daemon_probe after AUTH when the scrambling profile is used.
         self.descrambler=None
+        self.pause=PauseControl()
 
     def _phone_datagram(self,frame):
         descrambler=getattr(self,"descrambler",None)
@@ -1147,11 +1252,58 @@ class DaemonSession(base.SessionInput):
             self.stop_reason="sink_error"
         elif self.kms_connection is not None and self.kms_connection.closed_by_phone:
             self.stop_reason="kms_closed"
-        elif self.sink.unattached_seconds()>=VIEWER_GRACE_SECONDS:
-            self.stop_reason="viewer_left"
+        elif self._pause_control().failure is not None:
+            self.stop_reason=self._pause_control().failure
         return self.stop_reason is not None
 
+    def _pause_control(self):
+        # Sessions built without __init__ (tests) get one on first use.
+        if getattr(self,"pause",None) is None:
+            self.pause=PauseControl()
+        return self.pause
+
+    def send(self,connection,payload,timeout_s=5):
+        data=bytes(payload)
+        if data.startswith(b"PLAY "):
+            self._pause_control().learn_play(data)
+        return super().send(connection,data,timeout_s=timeout_s)
+
+    def _rtsp_responses(self):
+        """(cseq,status) of RTSP responses not yet consumed by the keep-alive handler."""
+        connection,offset=getattr(self,"rtsp_connection",None),getattr(self,"keepalive_offset",None)
+        found=[]
+        if connection is None or offset is None:
+            return found
+        while True:
+            parsed=rtsp.parse(bytes(connection.received[offset:]))
+            if parsed is None:
+                return found
+            message,size=parsed
+            offset+=size
+            if message["kind"]=="response":
+                found.append((message["cseq"],message["status"]))
+
+    def _pause_or_resume(self):
+        control=self._pause_control()
+        sink=getattr(self,"sink",None)
+        if (sink is None or control.uri is None or not self.window_open or self.cleanup
+                or control.failure is not None):
+            return
+        attached=bool(getattr(sink,"attached",False))
+        absent=sink.unattached_seconds()>=VIEWER_GRACE_SECONDS
+        rtp=self.media_counts.get(play.RTP_CONFIG,0) if hasattr(self,"media_counts") else 0
+        request=control.step(self.clock(),attached,absent,self._rtsp_responses(),rtp)
+        if request is not None:
+            self.log("rtsp_%s_sent"%request[0].lower(),cseq=request[1])
+            self.send(self.rtsp_connection,control.request(*request),timeout_s=RTSP_REPLY_SECONDS)
+        for note in control.take_notes():
+            notify=getattr(sink,"notify",None)
+            if notify is not None:
+                notify(note)
+
     def _answer_keepalives(self):
+        # Peek replies first: the keep-alive handler below consumes them.
+        self._pause_or_resume()
         super()._answer_keepalives()
         self._relay_cursor()
         # writer_gone() also drops a departed writer's partial line, so ask even when nothing is held.
@@ -1173,6 +1325,7 @@ class DaemonSession(base.SessionInput):
             result["usb_timing"]=timing.summary()
         descrambler=getattr(self,"descrambler",None)
         result["scramble"]=None if descrambler is None else descrambler.summary()
+        result["pause"]=self._pause_control().summary()
         return result
 
 
