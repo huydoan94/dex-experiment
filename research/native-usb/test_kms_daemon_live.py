@@ -279,9 +279,12 @@ class Tests(unittest.TestCase):
             away[0]=daemon.VIEWER_GRACE_SECONDS-.1
             self.assertFalse(s.stop_requested())
             away[0]=daemon.VIEWER_GRACE_SECONDS
+            # A departed viewer pauses the phone (PauseControl) instead of ending the session.
+            self.assertFalse(s.stop_requested())
+            s.pause=daemon.PauseControl();s.pause.failure="resume_no_media"
             self.assertTrue(s.stop_requested())
-            self.assertEqual(s.stop_reason,"viewer_left")
-            s.stop_reason=None
+            self.assertEqual(s.stop_reason,"resume_no_media")
+            s.stop_reason=None;s.pause=daemon.PauseControl()
             s.kms_connection.closed_by_phone=True
             self.assertTrue(s.stop_requested())
             self.assertEqual(s.stop_reason,"kms_closed")
