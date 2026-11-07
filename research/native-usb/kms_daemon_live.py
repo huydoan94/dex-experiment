@@ -25,7 +25,7 @@ import threading
 import time
 
 import duplex_link
-from threaded_input import ThreadedInputReader
+from threaded_input import ThreadedInputReader,_DISCONNECT as DISCONNECT
 import kms_input_live
 import kms_session_live as base
 import live_sink
@@ -624,6 +624,54 @@ class InputReader(base.InputReader):
         return False
 
 
+class WakingInputReader(ThreadedInputReader):
+    """ThreadedInputReader whose worker sleeps in poll() on the FIFO, not a fixed interval.
+
+    A move written by the gateway is collected at once instead of up to
+    poll_seconds later. Once the writer has gone the FIFO reports POLLHUP
+    continuously, so the worker then falls back to the plain interval."""
+    def __init__(self,reader,**kwargs):
+        self.poller=select.poll()
+        self.poller.register(reader.fd,select.POLLIN)
+        super().__init__(reader,**kwargs)
+
+    def _pause(self):
+        ready=dict(self.poller.poll(self.poll_seconds*1000)).get(self.reader.fd,0)
+        if ready&select.POLLHUP and not ready&select.POLLIN:
+            self.stop.wait(self.poll_seconds)
+
+    def _run(self):
+        # ThreadedInputReader._run with _pause() in place of stop.wait(poll_seconds).
+        gone=False
+        try:
+            while not self.stop.is_set():
+                events=self.reader.events()
+                if events:
+                    gone=False
+                for event in events:
+                    self._append(event)
+                now_gone=self.reader.writer_gone()
+                if now_gone and not gone:
+                    self._append(DISCONNECT)
+                gone=now_gone
+                if not self.stop.is_set():
+                    self._pause()
+        except Exception as error:
+            with self.lock:
+                self.error=error
+        finally:
+            try:
+                self.reader.close()
+            except Exception as error:
+                with self.lock:
+                    self.error=error
+
+    def queued_event(self):
+        """True while a viewer event (not a disconnect barrier) waits for the owner."""
+        queue=self.queue
+        return bool(queue) and queue[0][0] is not DISCONNECT
+
+
 class DaemonSession(base.SessionInput):
     def __init__(self,*args,on_streaming=lambda:None,**kwargs):
         super().__init__(*args,**kwargs)
@@ -632,6 +680,8 @@ class DaemonSession(base.SessionInput):
         self.on_streaming=on_streaming
         self.window_rtsp_start=None
         self.writer_releases=0
+        self.requesting=0
+        self.input_wakes=0
 
     @property
     def collect_media(self):
@@ -648,7 +698,7 @@ class DaemonSession(base.SessionInput):
             return super().wait(seconds,until)
         # base.SessionInput.wait opens kms_session_live's reader; this one adds writer_gone().
         original=base.InputReader
-        base.InputReader=lambda path:ThreadedInputReader(InputReader(path))
+        base.InputReader=lambda path:WakingInputReader(InputReader(path))
         try:
             self.sink.arm()
             try:
@@ -660,6 +710,26 @@ class DaemonSession(base.SessionInput):
         finally:
             base.InputReader=original
             self._compact_rtsp()
+
+    def _request(self,*args,**kwargs):
+        self.requesting+=1
+        try:
+            return super()._request(*args,**kwargs)
+        finally:
+            self.requesting-=1
+
+    def _next_frame(self,deadline):
+        # End the media slice early while viewer input is queued: usb_tunnel.wait
+        # treats TimeoutError as the slice deadline, and rtsp_udp_live then pumps
+        # input before the next slice. A request awaiting its reply is never cut.
+        # The same conditions under which rtsp_udp_live's slice loop pumps input.
+        if (not self.requesting and self.window_open and not self.cleanup
+                and self.collect_media and self.keepalive_offset is not None):
+            reader=getattr(self,"input",None)
+            if isinstance(reader,WakingInputReader) and reader.queued_event():
+                self.input_wakes+=1
+                raise TimeoutError("viewer input queued")
+        return super()._next_frame(deadline)
 
     def _compact_rtsp(self):
         """Drop the RTSP messages answered during the window, keeping the PLAY response.
@@ -706,6 +776,7 @@ class DaemonSession(base.SessionInput):
         result=super().summary()
         result["rtsp_seen_total"]=self.rtsp_seen.total
         result["kms_input"]["writer_releases"]=self.writer_releases
+        result["kms_input"]["input_wakes"]=self.input_wakes
         timing=getattr(self,"usb_timing",None)
         if timing is not None:
             result["usb_timing"]=timing.summary()
