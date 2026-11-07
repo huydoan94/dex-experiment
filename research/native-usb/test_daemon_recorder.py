@@ -630,5 +630,128 @@ class SinkDropTests(unittest.TestCase):
         self.assertEqual(summary["idle_dropped_bytes"],188)
 
 
+
+class FakeOutEngine:
+    """Holds every submitted OUT transfer until the test completes it."""
+    def __init__(self,fail_submit=0):
+        self.submitted=[];self.held=[];self.cancelled=0;self.closed=False;self.fail_submit=fail_submit
+        import threading;self.lock=threading.Lock()
+    def start(self,owner,count):self.owner,self.count=owner,count
+    def submit(self,endpoint,data,timeout,token):
+        if self.fail_submit:return self.fail_submit
+        with self.lock:self.submitted.append((endpoint,bytes(data)));self.held.append((len(data),token))
+        return 0
+    def finish(self,n=None,status=0,short=False):
+        with self.lock:batch,self.held=(self.held,[]) if n is None else (self.held[:n],self.held[n:])
+        for length,token in batch:self.owner.complete(status,length-1 if short and length else length,length,token)
+        return len(batch)
+    def cancel_all(self):self.cancelled+=1
+    def close(self):self.closed=True
+
+
+def wait_for(predicate,seconds=2):
+    import time as clock
+    deadline=clock.monotonic()+seconds
+    while not predicate() and clock.monotonic()<deadline:clock.sleep(.005)
+    return predicate()
+
+
+class AsyncOutTests(unittest.TestCase):
+    def timing(self,engine,transfers=3):
+        made=[]
+        def factory(device,on_done):
+            made.append(device);return daemon.AsyncOut(engine,transfers=transfers,on_done=on_done)
+        device=FakeUsb([])
+        return daemon.UsbTiming(device,async_out=factory),device,made
+
+    def test_queue_order_with_a_bounded_window_and_zlp_kept_in_place(self):
+        engine=FakeOutEngine();timing,device,made=self.timing(engine)
+        frames=[b"a"*512,b"",b"ack1",b"input",b"ack2"]
+        for frame in frames:self.assertEqual(timing.write(1,frame,1000),len(frame))
+        self.assertTrue(wait_for(lambda:len(engine.submitted)==3))
+        self.assertEqual(timing.async_out.inflight,3)          # window full: the rest waits
+        self.assertEqual(len(engine.submitted),3)
+        while len(engine.submitted)<len(frames) or engine.held:
+            engine.finish(1);wait_for(lambda:len(engine.submitted)==len(frames) or engine.held)
+        timing.stop_writer()
+        self.assertEqual(engine.submitted,[(1,f) for f in frames])
+        self.assertEqual(device.written,[])                   # nothing through the synchronous path
+        self.assertEqual(made,[device])
+        summary=timing.summary()
+        self.assertEqual((summary["writes"],timing.write_bytes.tolist()),(5,[512,0,4,5,4]))
+        self.assertEqual(summary["async_out"],dict(transfers=3,submitted=5,completed=5,inflight=0,
+                                                   inflight_peak=3,error=None))
+        self.assertTrue(engine.closed)
+
+    def test_failed_or_short_transfer_fails_the_next_read_and_write(self):
+        for kwargs,pattern in ((dict(status=1),"status 1"),(dict(short=True),"3 of 4 bytes")):
+            with self.subTest(kwargs=kwargs):
+                engine=FakeOutEngine();timing,device,_=self.timing(engine)
+                device.chunks=[b"r"]
+                timing.write(1,b"abcd")
+                self.assertTrue(wait_for(lambda:engine.held))
+                engine.finish(**kwargs)
+                with self.assertRaisesRegex(Exception,pattern):timing.read(133,512)
+                with self.assertRaisesRegex(Exception,pattern):timing.write(1,b"y")
+                with self.assertRaisesRegex(Exception,pattern):timing.stop_writer()
+
+    def test_submit_failure_stops_the_writer(self):
+        engine=FakeOutEngine(fail_submit=-4);timing,_,_=self.timing(engine)
+        timing.write(1,b"x")
+        self.assertTrue(wait_for(lambda:timing.writer_error is not None))
+        with self.assertRaisesRegex(Exception,"submit failed -4"):timing.write(1,b"y")
+        self.assertEqual(timing.async_out.inflight,0)
+
+    def test_transfer_in_flight_forbids_usb_release_until_it_completes(self):
+        engine=FakeOutEngine();timing,_,_=self.timing(engine)
+        timing.write(1,b"x")
+        self.assertTrue(wait_for(lambda:engine.held))
+        owner=daemon.DaemonOwner.__new__(daemon.DaemonOwner)
+        reader=SimpleNamespace(stop=lambda:None,alive=lambda:False,stop_done=True,summary=lambda:{})
+        owner.current=SimpleNamespace(usb_timing=timing);owner.quiesced=False;owner.quiesce_error=None;owner.reader=reader
+        released=[];owner.util=SimpleNamespace(release_interface=lambda *a:released.append(a));owner.result={}
+        with patch.object(daemon,"WRITER_STOP_SECONDS",.05):
+            stop=timing.async_out.stop
+            timing.async_out.stop=lambda seconds:stop(.05)
+            with self.assertRaisesRegex(Exception,"still in flight; USB resource release prohibited"):
+                owner.release_interface("dev",3)
+        self.assertEqual((released,engine.cancelled),([],1))
+        engine.finish(status=3)                              # the cancellation completes
+        # Released now; the undelivered (cancelled) write is still reported.
+        with self.assertRaisesRegex(Exception,"status 3"):owner.release_interface("dev",3)
+        self.assertEqual(released,[("dev",3)])
+        self.assertTrue(engine.closed)
+
+    def test_engine_setup_failure_keeps_synchronous_writes(self):
+        def factory(device,on_done):raise OSError("no libusb")
+        device=FakeUsb([]);timing=daemon.UsbTiming(device,async_out=factory)
+        for frame in (b"a",b"bc"):timing.write(1,frame)
+        timing.stop_writer()
+        self.assertEqual(device.written,[1,2])
+        summary=timing.summary()
+        self.assertEqual((summary["async_out"],summary["async_out_unavailable"]),(None,"OSError: no libusb"))
+
+    def test_owner_session_uses_async_out(self):
+        class FakeSession:
+            def __init__(self,link,*args,log,**kwargs):
+                self.log,self.max_frame_bytes=log,65536
+                self.decoder=SimpleNamespace(max_frame_bytes=65536)
+        owner=daemon.DaemonOwner.__new__(daemon.DaemonOwner)
+        owner.sink=owner.stop_file=owner.input_fifo=None
+        owner.on_streaming=lambda:None
+        link=Link(SimpleNamespace(),TimeoutError)
+        made=[]
+        with patch.object(daemon,"DaemonSession",FakeSession), \
+                patch.object(daemon,"LibusbOutEngine",lambda device:made.append(device) or FakeOutEngine()):
+            session=owner.session(link,1,65536,daemon.long.MAX_RECEIVE_BYTES,log=lambda event,**fields:None)
+            session.usb_timing.write(1,b"x")
+            self.assertTrue(wait_for(lambda:session.usb_timing.async_out is not None
+                                     and session.usb_timing.async_out.engine.held))
+        self.assertEqual(len(made),1)
+        self.assertIsInstance(session.usb_timing.async_out,daemon.AsyncOut)
+        session.usb_timing.async_out.engine.finish()
+        session.usb_timing.stop_writer()
+
+
 if __name__=="__main__":
     unittest.main()
