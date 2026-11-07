@@ -26,6 +26,11 @@ MAX_GREETING = 1024
 # DSCP 41 on everything sent to the client (user 2026-11-06); ToS byte = DSCP << 2,
 # the kernel keeps managing the two ECN bits.
 DSCP = 41
+# Cursor shapes flow back on the input socket only to a client that opted in with
+# this first line (older clients treat any server byte as end of connection). The
+# session writes 'C <MOUSE_CURSOR_ID> <0|1 night>' lines to cursor.fifo.
+CURSOR_OPT_IN = b'X cursor\n'
+CURSOR_LINE_BYTES = 16
 
 
 def response(sock, status):
@@ -50,7 +55,7 @@ class Pair:
         self.worker = None
         self.created = time.monotonic()
         self.reason = None
-        self.counts = {'media_bytes': 0, 'input_bytes': 0}
+        self.counts = {'media_bytes': 0, 'input_bytes': 0, 'cursor_lines': 0, 'cursor_dropped': 0}
 
     def attach(self, role, sock):
         with self.lock:
@@ -176,13 +181,41 @@ class Pair:
         finally:
             os.close(fd)
 
+    def cursor_lines(self, data):
+        """Complete, well-formed cursor lines from the session; anything else is dropped."""
+        self.cursor_buffer += data
+        *lines, rest = self.cursor_buffer.split(b'\n')
+        self.cursor_buffer = bytearray(rest[-CURSOR_LINE_BYTES:])
+        kept = []
+        for line in lines:
+            parts = line.split(b' ')
+            if (len(parts) == 3 and parts[0] == b'C' and parts[1].isdigit() and len(parts[1]) <= 5
+                    and parts[2] in (b'0', b'1')):
+                kept.append(line+b'\n')
+                self.counts['cursor_lines'] += 1
+            else:
+                self.counts['cursor_dropped'] += 1
+        return b''.join(kept)
+
     def input(self):
         sock = self.sockets['input']
         pending, fd = bytearray(), None
         started, progress = time.monotonic(), None
+        # None until the first bytes show whether the client opted in to cursor lines.
+        cursor, cursor_fd = None, None
+        self.cursor_buffer = bytearray()
         try:
             while not self.stop.is_set():
                 now = time.monotonic()
+                if cursor and cursor_fd is None and (self.server.run_dir/'cursor.fifo').exists():
+                    cursor_fd = fifo(self.server.run_dir/'cursor.fifo', os.O_RDONLY)
+                if cursor_fd is not None:
+                    try:
+                        lines = self.cursor_lines(os.read(cursor_fd, 512))
+                    except BlockingIOError:
+                        lines = b''
+                    if lines:
+                        sock.sendall(lines)
                 if fd is None:
                     if now-started > STARTUP_SECONDS:
                         raise TimeoutError('input startup')
@@ -193,7 +226,13 @@ class Pair:
                             raise
                 if pending and progress is not None and now-progress > WRITE_SECONDS:
                     raise TimeoutError('input FIFO stalled')
-                if fd is not None and pending:
+                if cursor is None and pending:
+                    if pending.startswith(CURSOR_OPT_IN):
+                        del pending[:len(CURSOR_OPT_IN)]
+                        cursor = True
+                    elif not CURSOR_OPT_IN.startswith(bytes(pending)):
+                        cursor = False
+                if fd is not None and pending and cursor is not None:
                     try:
                         count = os.write(fd, pending)
                         del pending[:count]
@@ -213,6 +252,8 @@ class Pair:
                 elif pending:
                     self.stop.wait(.005)
         finally:
+            if cursor_fd is not None:
+                os.close(cursor_fd)
             if fd is not None:
                 os.close(fd)
 

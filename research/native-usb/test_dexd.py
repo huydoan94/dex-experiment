@@ -173,7 +173,7 @@ class Tests(unittest.TestCase):
         # The black screen comes with the phone, before any viewer.
         self.assertEqual((calls,order),([],["pins","relisten","blackscreen"]))
         # While waiting, the FIFOs are there for the viewer to open.
-        for name in ("ts.fifo","input.fifo"):
+        for name in ("ts.fifo","input.fifo","cursor.fifo"):
             self.assertTrue(stat.S_ISFIFO(os.lstat(self.env.run/name).st_mode))
         holder=hold(self.env.run/"viewer.lock")
         try:
@@ -285,7 +285,8 @@ class Tests(unittest.TestCase):
         (self.env.run/"stop").touch()
         (self.env.run/"streaming").touch()
         dexd.fresh_run_dir()
-        self.assertEqual(sorted(p.name for p in self.env.run.iterdir()),["input.fifo","ts.fifo"])
+        self.assertEqual(sorted(p.name for p in self.env.run.iterdir()),["cursor.fifo","input.fifo","ts.fifo"])
+        self.assertTrue(stat.S_ISFIFO(os.lstat(self.env.run/"cursor.fifo").st_mode))
         self.assertTrue(stat.S_ISFIFO(os.lstat(self.env.run/"ts.fifo").st_mode))
 
     def test_rotation_keeps_the_newest_sessions_and_their_logs(self):

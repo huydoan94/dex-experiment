@@ -414,3 +414,88 @@ class SliceWakeTests(unittest.TestCase):
              patch.object(daemon.base.SessionInput,"_next_frame",create=True,return_value="reply"):
             self.assertEqual(daemon.DaemonSession._request(session),"reply")
         self.assertEqual((seen,session.requesting,session.input_wakes),([1],0,0))
+
+
+def common(message,response=False):
+    """One JSON common message framed as the phone's commonMessageStart/Buffer/End."""
+    import json as _json
+    import sidesync_packets
+    start,body,end=(0x67,0x68,0x69) if response else (0x64,0x65,0x66)
+    raw=_json.dumps(message).encode()
+    return (sidesync_packets.encode(start,b"\0"*16)+sidesync_packets.encode(body,raw[:20])
+            +sidesync_packets.encode(body,raw[20:])+sidesync_packets.encode(end,b""))
+
+
+def cursor(shape,night=False):
+    return common({"TYPE":"NOTI","MSG":"MOUSE_CURSOR_CHANGE","PARAM":{"MOUSE_CURSOR_ID":shape,"IS_NIGHT_MODE":night}})
+
+
+class CursorRelayTests(unittest.TestCase):
+    def setUp(self):
+        import os,tempfile
+        self.os=os
+        self.dir=tempfile.TemporaryDirectory()
+        self.path=os.path.join(self.dir.name,"cursor.fifo")
+        os.mkfifo(self.path,0o600)
+        self.now=[0.0]
+        self.relay=daemon.CursorRelay(self.path,clock=lambda:self.now[0])
+
+    def tearDown(self):
+        self.relay.close()
+        self.dir.cleanup()
+
+    def reader(self):
+        return self.os.open(self.path,self.os.O_RDONLY|self.os.O_NONBLOCK)
+
+    def test_split_stream_yields_only_cursor_shapes_in_order(self):
+        import sidesync_packets
+        stream=(sidesync_packets.connect_confirmed()+common({"TYPE":"REQ","MSG":"FeatureList"})
+                +cursor(1002)+sidesync_packets.heartbeat_response()+cursor(1008,True))
+        fd=self.reader()
+        try:
+            received=bytearray()
+            for end in range(0,len(stream)+1,7):  # arbitrary split points, partial frames
+                self.relay.feed(stream[:end])
+                self.relay.flush()
+                try:received+=self.os.read(fd,64)
+                except BlockingIOError:pass
+            self.relay.feed(stream);self.relay.flush()
+            try:received+=self.os.read(fd,64)
+            except BlockingIOError:pass
+            # Only the latest pending shape is written per flush; both arrive here.
+            self.assertEqual(bytes(received),b"C 1002 0\nC 1008 1\n")
+            self.assertEqual(self.relay.summary()["changes"],2)
+            self.assertIsNone(self.relay.error)
+        finally:
+            self.os.close(fd)
+
+    def test_without_reader_only_latest_shape_waits_and_open_is_rate_limited(self):
+        self.relay.feed(cursor(1002)+cursor(1000));self.relay.flush();self.relay.flush()
+        self.assertEqual(self.relay.counts["no_reader"],1)
+        fd=self.reader()
+        try:
+            self.relay.flush()
+            self.assertEqual(self.os.read(fd,64),b"")  # no writer opened yet: nothing sent
+            self.now[0]+=daemon.CURSOR_OPEN_RETRY_SECONDS
+            self.relay.flush()
+            self.assertEqual(self.os.read(fd,64),b"C 1000 0\n")
+            self.assertEqual(self.relay.summary()["last_id"],1000)
+        finally:
+            self.os.close(fd)
+
+    def test_departed_reader_and_bad_input_never_raise(self):
+        fd=self.reader()
+        self.relay.feed(cursor(1002));self.relay.flush()
+        self.os.close(fd)
+        self.relay.feed(cursor(1002)+cursor(1008));self.relay.flush()
+        self.assertEqual(self.relay.counts["reader_left"],1)
+        for bad in ({"MSG":"MOUSE_CURSOR_CHANGE","PARAM":{"MOUSE_CURSOR_ID":"1002"}},
+                    {"MSG":"MOUSE_CURSOR_CHANGE","PARAM":{"MOUSE_CURSOR_ID":-1}},
+                    {"MSG":"MOUSE_CURSOR_CHANGE"},
+                    {"TYPE":"NOTI","MSG":"OTHER","PARAM":{"MOUSE_CURSOR_ID":1002}}):
+            relay=daemon.CursorRelay(self.path)
+            relay.feed(common(bad));relay.flush()
+            self.assertIsNone(relay.pending)
+        broken=daemon.CursorRelay(self.path)
+        broken.feed(b"\x09\x64\x00\x08xxxx"+cursor(1002))
+        self.assertEqual((broken.error,broken.pending),("invalid frame header",None))

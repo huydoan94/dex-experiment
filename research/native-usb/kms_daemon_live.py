@@ -17,6 +17,7 @@ Saved results stay counts only.
 from array import array
 from collections import Counter,deque
 import errno
+import json
 import os
 import select
 import stat
@@ -32,6 +33,7 @@ import live_sink
 import rtsp
 import rtsp_udp_long as long
 import rtsp_udp_play as play
+from sidesync_packets import VERSION
 
 # Ten years: "until stopped" without changing the pinned arithmetic.
 FOREVER_SECONDS=10*365*86400
@@ -624,6 +626,118 @@ class InputReader(base.InputReader):
         return False
 
 
+# The phone app (DeXonPC e2/v MouseIconChangedListener -> e2/s.u) reports every
+# pointer-shape change as a KMS common message {"TYPE":"NOTI","MSG":
+# "MOUSE_CURSOR_CHANGE","PARAM":{"MOUSE_CURSOR_ID":<Android PointerIcon type>,
+# "IS_NIGHT_MODE":bool}}, framed commonMessageStart/Buffer/End as kms_hover_live
+# records them at startup (request 0x64-0x66, response 0x67-0x69).
+CURSOR_MSG="MOUSE_CURSOR_CHANGE"
+COMMON_START,COMMON_BODY,COMMON_END=(0x64,0x67),(0x65,0x68),(0x66,0x69)
+MAX_COMMON_BYTES=16384
+CURSOR_OPEN_RETRY_SECONDS=.5
+
+
+class CursorRelay:
+    """Forwards the phone's cursor-shape notices to cursor.fifo beside the input FIFO.
+
+    Cosmetic only: it never raises into the session. Only the latest shape waits
+    while no gateway reader is attached; saved results hold counts and the last id."""
+    def __init__(self,path,clock=time.monotonic):
+        self.path,self.clock=path,clock
+        self.offset=0
+        self.body=None
+        self.error=None
+        self.fd=None
+        self.next_open=0
+        self.pending=None
+        self.last_sent=None
+        self.counts=Counter()
+
+    def feed(self,data):
+        """Consume complete SideSync frames of the KMS byte stream from self.offset."""
+        while self.error is None and len(data)-self.offset>=4:
+            start=self.offset
+            kind=data[start+1]
+            size=int.from_bytes(data[start+2:start+4],"big")
+            if data[start]!=VERSION or size<4:
+                self.error="invalid frame header"
+                return
+            if len(data)-start<size:
+                return
+            if kind in COMMON_START:
+                self.body=bytearray()
+            elif kind in COMMON_BODY and self.body is not None:
+                self.body+=data[start+4:start+size]
+                if len(self.body)>MAX_COMMON_BYTES:
+                    self.body=None
+                    self.counts["oversized"]+=1
+            elif kind in COMMON_END and self.body is not None:
+                self._message(bytes(self.body))
+                self.body=None
+            self.offset=start+size
+
+    def _message(self,raw):
+        try:
+            message=json.loads(raw.decode("utf-8"))
+        except ValueError:
+            return
+        if not isinstance(message,dict) or message.get("MSG")!=CURSOR_MSG:
+            return
+        param=message.get("PARAM")
+        shape=param.get("MOUSE_CURSOR_ID") if isinstance(param,dict) else None
+        if type(shape) is not int or not 0<=shape<=99999:
+            self.counts["invalid"]+=1
+            return
+        self.counts["changes"]+=1
+        self.pending=(shape,1 if param.get("IS_NIGHT_MODE") is True else 0)
+
+    def flush(self):
+        if self.pending is None or self.error is not None:
+            return
+        try:
+            if self.fd is None:
+                now=self.clock()
+                if now<self.next_open:
+                    return
+                self.next_open=now+CURSOR_OPEN_RETRY_SECONDS
+                try:
+                    fd=os.open(self.path,os.O_WRONLY|os.O_NONBLOCK|os.O_NOFOLLOW|os.O_CLOEXEC)
+                except OSError as error:
+                    if error.errno in (errno.ENXIO,errno.ENOENT):
+                        self.counts["no_reader"]+=1
+                        return
+                    raise
+                if not stat.S_ISFIFO(os.fstat(fd).st_mode):
+                    os.close(fd)
+                    raise OSError("cursor path is not a FIFO")
+                self.fd=fd
+            try:
+                os.write(self.fd,b"C %d %d\n"%self.pending)
+            except BlockingIOError:
+                self.counts["full"]+=1
+                return
+            except BrokenPipeError:
+                self.close()
+                self.counts["reader_left"]+=1
+                return
+            self.counts["sent"]+=1
+            self.last_sent,self.pending=self.pending,None
+        except OSError as error:
+            self.error=type(error).__name__
+            self.close()
+
+    def close(self):
+        if self.fd is not None:
+            fd,self.fd=self.fd,None
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    def summary(self):
+        return dict(self.counts,error=self.error,last_id=self.last_sent[0] if self.last_sent else None)
+
+
 class WakingInputReader(ThreadedInputReader):
     """ThreadedInputReader whose worker sleeps in poll() on the FIFO, not a fixed interval.
 
@@ -682,6 +796,7 @@ class DaemonSession(base.SessionInput):
         self.writer_releases=0
         self.requesting=0
         self.input_wakes=0
+        self.cursor=None
 
     @property
     def collect_media(self):
@@ -710,6 +825,18 @@ class DaemonSession(base.SessionInput):
         finally:
             base.InputReader=original
             self._compact_rtsp()
+
+    def _relay_cursor(self):
+        # Cosmetic pointer shape for the viewer; sessions built without __init__
+        # (tests) or without a KMS connection simply have none.
+        connection=getattr(self,"kms_connection",None)
+        fifo=getattr(self,"input_fifo",None)
+        if not self.window_open or self.cleanup or connection is None or fifo is None:
+            return
+        if getattr(self,"cursor",None) is None:
+            self.cursor=CursorRelay(os.path.join(os.path.dirname(fifo),"cursor.fifo"))
+        self.cursor.feed(connection.received)
+        self.cursor.flush()
 
     def _request(self,*args,**kwargs):
         self.requesting+=1
@@ -766,6 +893,7 @@ class DaemonSession(base.SessionInput):
 
     def _answer_keepalives(self):
         super()._answer_keepalives()
+        self._relay_cursor()
         # writer_gone() also drops a departed writer's partial line, so ask even when nothing is held.
         if (self.window_open and not self.cleanup and not self.pending
                 and self.input.writer_gone() and (self.held or self.keys_held)):
@@ -777,6 +905,9 @@ class DaemonSession(base.SessionInput):
         result["rtsp_seen_total"]=self.rtsp_seen.total
         result["kms_input"]["writer_releases"]=self.writer_releases
         result["kms_input"]["input_wakes"]=self.input_wakes
+        if getattr(self,"cursor",None) is not None:
+            self.cursor.close()
+            result["kms_input"]["cursor"]=self.cursor.summary()
         timing=getattr(self,"usb_timing",None)
         if timing is not None:
             result["usb_timing"]=timing.summary()
