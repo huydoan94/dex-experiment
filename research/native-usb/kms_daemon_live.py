@@ -16,6 +16,7 @@ Saved results stay counts only.
 """
 from array import array
 from collections import Counter,deque
+import dataclasses
 import errno
 import json
 import os
@@ -34,6 +35,7 @@ import rtsp
 import rtsp_udp_long as long
 import rtsp_udp_play as play
 from sidesync_packets import VERSION
+import tcp_control
 
 # Ten years: "until stopped" without changing the pinned arithmetic.
 FOREVER_SECONDS=10*365*86400
@@ -786,6 +788,80 @@ class WakingInputReader(ThreadedInputReader):
         return bool(queue) and queue[0][0] is not DISCONNECT
 
 
+class Descrambler:
+    """Samsung RTP scrambling, receiver side.
+
+    Official SamsungDeX.exe 2.4.1.27 RTPSocket receive (0x004fbd70): when the
+    phone scrambles, every byte i >= 12 of a received RTP datagram is XORed with
+    key[i % len(key)], where key is SUtil::_gSessionKey: the 32-byte AUTH session
+    key as 64 uppercase hex characters (Crypto++ HexEncoder, no grouping). The
+    phone app passes the same string as scramble_support (DeX app r2/r.p).
+
+    The mode latches on the first datagram whose MPEG-TS sync byte decides it,
+    so a phone that sends plain TS anyway still plays. The key is never logged.
+    """
+    HEADER_BYTES=12
+    MAX_DATAGRAM_BYTES=1<<16
+
+    def __init__(self,session_key):
+        if not isinstance(session_key,bytes) or len(session_key)!=32:
+            raise ValueError("session key must be 32 bytes")
+        key=session_key.hex().upper().encode("ascii")
+        self._stream=(key*(self.MAX_DATAGRAM_BYTES//len(key)+1))[:self.MAX_DATAGRAM_BYTES]
+        self.mode=None
+        self.undecided=self.descrambled=0
+
+    def __repr__(self):
+        return "Descrambler(mode=%r)"%(self.mode,)
+
+    def descramble(self,packet):
+        size=len(packet)
+        if size<=self.HEADER_BYTES or size>self.MAX_DATAGRAM_BYTES:
+            return bytes(packet)
+        tail=size-self.HEADER_BYTES
+        value=(int.from_bytes(packet[self.HEADER_BYTES:],"big")
+               ^int.from_bytes(self._stream[self.HEADER_BYTES:size],"big"))
+        return bytes(packet[:self.HEADER_BYTES])+value.to_bytes(tail,"big")
+
+    @staticmethod
+    def _synced(packet):
+        ts=long.live.ts_payload(packet)
+        return bool(ts) and ts[0]==0x47
+
+    def packet(self,packet):
+        if self.mode is None:
+            if self._synced(packet):
+                self.mode="plain"
+            else:
+                clear=self.descramble(packet)
+                if not self._synced(clear):
+                    self.undecided+=1
+                    return packet
+                self.mode="scrambled"
+                self.descrambled+=1
+                return clear
+        if self.mode=="plain":
+            return packet
+        self.descrambled+=1
+        return self.descramble(packet)
+
+    def frame(self,frame):
+        """The UDP data frame with its RTP payload descrambled; other frames unchanged."""
+        body=frame.body
+        header=tcp_control._DATA.size
+        if (len(body)<=header or frame.command!=5 or frame.kind!=1
+                or int.from_bytes(body[4:8],"little")!=play.RTP_CONFIG):
+            return frame
+        payload=body[header:]
+        clear=self.packet(payload)
+        if clear is payload:
+            return frame
+        return dataclasses.replace(frame,body=bytes(body[:header])+clear)
+
+    def summary(self):
+        return dict(mode=self.mode,descrambled=self.descrambled,undecided=self.undecided)
+
+
 class DaemonSession(base.SessionInput):
     def __init__(self,*args,on_streaming=lambda:None,**kwargs):
         super().__init__(*args,**kwargs)
@@ -797,6 +873,14 @@ class DaemonSession(base.SessionInput):
         self.requesting=0
         self.input_wakes=0
         self.cursor=None
+        # Set by kms_daemon_probe after AUTH when the scrambling profile is used.
+        self.descrambler=None
+
+    def _phone_datagram(self,frame):
+        descrambler=getattr(self,"descrambler",None)
+        if descrambler is not None:
+            frame=descrambler.frame(frame)
+        super()._phone_datagram(frame)
 
     @property
     def collect_media(self):
@@ -911,6 +995,8 @@ class DaemonSession(base.SessionInput):
         timing=getattr(self,"usb_timing",None)
         if timing is not None:
             result["usb_timing"]=timing.summary()
+        descrambler=getattr(self,"descrambler",None)
+        result["scramble"]=None if descrambler is None else descrambler.summary()
         return result
 
 

@@ -31,11 +31,22 @@ import wfd_startup as wfd
 from tunnel_probe import emit
 
 STAGE_MARGIN_SECONDS = 8
+# True: report the official PcVer (rtsp_udp_live.BASE_PC_VERSION), so the phone
+# scrambles RTP with the AUTH session key and kms_daemon_live.Descrambler undoes it.
+# False: the proven plain profile (PLAIN_PC_VERSION, one patch below the gate).
+SCRAMBLED = True
+
+
+def select_profile():
+    """Pinned Windows TerminalInfo with the scrambling (base) or plain PcVer."""
+    rtsp_udp_live.plain_profile(cap)  # also refuses any profile but the pinned base
+    if SCRAMBLED:
+        cap.PROFILE=dict(cap.PROFILE,PcVer=rtsp_udp_live.BASE_PC_VERSION)
 
 
 def main(argv=None):
     daemon.configure()
-    rtsp_udp_live.plain_profile(cap)
+    select_profile()
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--approved-phone-kms-daemon",action="store_true")
     p.add_argument("--accept-persistent-state",action="store_true")
@@ -88,7 +99,7 @@ def main(argv=None):
                 media_headers_only=True,live_view=True,duplex_in=True,daemon=True,
                 persistent_state_may_remain=True)
     (a.output/"plan.json").write_text(json.dumps(dict(
-        client_profile=cap.PROFILE,enable_screen_share=True,auto_confirmation=True,
+        client_profile=cap.PROFILE,rtp_scrambling=SCRAMBLED,enable_screen_share=True,auto_confirmation=True,
         max_adb_commands=4,max_taps=1,ui_driver_deadline_seconds_from_launcher=75,
         diagnostic_wfd_profile=rtsp_udp_long.AUDIO_UDP_PROFILE,setup=True,setup_transport="udp",
         play=True,teardown=True,live_view=True,media_saved="headers_only",ts_fifo=str(a.ts_fifo),
@@ -100,6 +111,9 @@ def main(argv=None):
         quiet_events=sorted(daemon.QUIET_EVENTS)),indent=2)+"\n")
     latest_stage=absolute_ui_deadline+STAGE_MARGIN_SECONDS
     def after_auth(session,connection,client,result,clock,log):
+        if SCRAMBLED:
+            # Before any RTP: the phone keys scrambling with this AUTH session key.
+            session.descrambler=daemon.Descrambler(client.codec()._key)
         cap.capabilities(session,connection,client,result,clock,log)
         pss_probe.pss_ready(session,connection,client,result,clock,log)
         def confirm(s,main,r,logger,deadline):
