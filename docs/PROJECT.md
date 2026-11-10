@@ -48,7 +48,7 @@ release on focus loss. Gateway marks client traffic DSCP 41.
 | --- | --- | --- |
 | WSL (this project) | docs, evidence, backend source + tests, client source, exports, research tools | 3.9 GB RAM |
 | the backend machine `<backend-host>` `<backend-project>` | running backend only (runtime files, deps `tools/crypto-root`, `tools/usb-root`, dexd state) | small |
-| Windows build machine | client build/test workspace the build machine work folder | all build machine files there |
+| Windows build machine (Windows 10 x64) | client build/test workspace in the the build folder folder (the build folder) | all build machine files there |
 
 Admin access only through the private lab tools
 (pinned SSH; every backend command is appended to a private command log). Run
@@ -72,8 +72,12 @@ Physical Windows and the virtualization host hosts are off limits.
 
 ## Client build and package
 
-Build on the Windows build machine (the build machine work folder), package with
-the private packaging scripts (update the expected hashes there). The standalone ZIP
+Build on the Windows build machine in the build folder, package with
+the private packaging scripts (update the expected hashes there). the lab runner maps the
+folder for each SSH session and sets `the build folder`; the scripts refuse to run without
+it. The folder is a share that maps the DOS Archive attribute to the execute bit;
+files written by MSBuild lack it and fail with "Access is denied". After a
+build, set Archive on the outputs (`$_.Attributes = $_.Attributes -bor 'Archive'`). The standalone ZIP
 bundles the runtime, `backend.json` and the token (`gateway-token`).
 Local gateway regression: `python3 scripts/gateway/test_direct_gateway.py`.
 Docs check: `python3 scripts/session-preflight.py`.
