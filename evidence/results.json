@@ -71,6 +71,6 @@
   "connect refusal avoided by replug, root cause unknown",
   "no physical/optical latency measurement",
   "19 older test modules need fixtures archived 2026-11-06",
-  "Windows build machine down: client features (system keys, clipboard, resolution, drag and drop) waiting"
+  "client features waiting: clipboard, resolution choice / 720p60, drag and drop"
  ]
 }

@@ -15,7 +15,7 @@ This repository is the research project. Data is saved in another container.
   research/native-usb/MANIFEST.sha256). The previous two versions are kept there
   as `before-*` rollbacks. Time zone and phone serial come from a local config file read
   by dexd; without it, logs are UTC and the single attached phone is used.
-- **Client**: v7 (build from `windows/`).
+- **Client**: v7 package; v8 test = v7 + system keys (build from `windows/`).
 - **Behaviour**: async USB in/out, scrambled RTP with descrambling, pause on
   disconnect / resume on connect (10 s reply / 30 s video timeouts fall back to
   TEARDOWN + replug), replug after a session ends, pointer shapes, input wake,
@@ -39,8 +39,8 @@ evidence/results.json, evidence/checks.log, docs/FIXES.md and MANIFEST.sha256.
 - Phone connect refusal (status 4, error 111) is avoided by replugging; cause
   unknown.
 - No physical/optical latency or listening measurement; user feel is the test.
-- Waiting for the Windows build machine: system keys, clipboard sync, resolution choice /
-  720p60, file drag and drop; build machine work-folder cleanup.
+- Client features still to do: clipboard sync, resolution choice / 720p60,
+  file drag and drop. System keys done (v8 test, accepted 2026-11-10).
 
 ## Environment
 
