@@ -19,4 +19,6 @@ How each problem was fixed: [docs/FIXES.md](../docs/FIXES.md). Full history is k
 - No physical/optical latency or listening measurement (user feel is the test).
 - 19 older test modules need capture folders archived on 2026-11-06.
 - Waiting for the Windows build machine: system keys, clipboard sync, resolution choice, file drag
-  and drop; the Windows build machine the build machine work folder cleanup.
+  and drop; old content cleanup in the build folder.
+- Windows build machine is Windows 10; the app declares Windows 11 as minimum. Release
+  build, 190 session checks and the v7 app launch (to Disconnected) work there (2026-11-10).
