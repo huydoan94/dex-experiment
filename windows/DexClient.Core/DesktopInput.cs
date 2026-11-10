@@ -31,7 +31,17 @@ public sealed class DesktopInput
       0x5b => 125, 0x5c => 126, 0x5d => 127, 0x5e => 116, _ => 0 }
         : scan switch { >= 1 and <= 0x58 => scan, 0x59 => 117, 0x70 => 93, 0x73 => 89,
             0x79 => 92, 0x7b => 94, 0x7d => 124, 0x7e => 121, _ => 0 };
-    public string[] Key(int scan, bool extended, bool down, int virtualKey = 0)
+    // Keys Windows handles before any window sees them. The app's keyboard hook
+    // forwards these to the phone (system: true) while the stream window is active;
+    // Alt+F4, Ctrl+Alt+Del and Win+L stay with the PC.
+    public static bool CapturesSystemKey(int virtualKey, bool alt, bool control) => virtualKey switch
+    {
+        0x5b or 0x5c => true,      // Left/right Windows key (evdev 125/126, DeX Meta).
+        0x09 => alt,               // Alt+Tab.
+        0x1b => alt || control,    // Alt+Esc, Ctrl+Esc.
+        _ => false
+    };
+    public string[] Key(int scan, bool extended, bool down, int virtualKey = 0, bool system = false)
     {
         int key = virtualKey switch
         {
@@ -42,7 +52,7 @@ public sealed class DesktopInput
             0x15 when scan is 0 or 0x72 or 0xf2 => 122, 0x19 when scan is 0 or 0x71 or 0xf1 => 123, // Korean Hangul/Hanja virtual keys.
             _ => ScanCode(scan, extended)
         };
-        if (!Enabled || key == 0 || key is 125 or 126 || (down && key == 62 && (keys.Contains(56) || keys.Contains(100)))) return [];
+        if (!Enabled || key == 0 || (key is 125 or 126 && !system) || (down && key == 62 && (keys.Contains(56) || keys.Contains(100)))) return [];
         // Windows emits some Korean language keys only as a release. Forward
         // one complete tap rather than discarding it as an unmatched key-up.
         if (!down && (key is 122 or 123) && !keys.Contains(key)) return [$"K d {key}", $"K u {key}"];
