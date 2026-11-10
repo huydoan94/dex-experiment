@@ -40,6 +40,8 @@
                               ToolTipService.ToolTip="Show the local input position. This does not change the phone cursor." />
                 <ToggleButton x:Name="LowLatencyButton" Content="Low latency" IsChecked="True" Click="ToggleLowLatency" Height="44" CornerRadius="10" BorderThickness="0" Background="Transparent"
                               ToolTipService.ToolTip="Show each picture as soon as it is decoded. Audio keeps its buffer and may trail the picture; turn off to keep sound and picture in sync." />
+                <ToggleButton x:Name="SystemKeysButton" Content="System keys" IsChecked="True" Click="ToggleSystemKeys" Height="44" CornerRadius="10" BorderThickness="0" Background="Transparent"
+                              ToolTipService.ToolTip="Send the Windows key, Alt+Tab, Alt+Esc and Ctrl+Esc to the phone while this window is active. Alt+F4 and Ctrl+Alt+Del stay with this PC." />
                 <Button Content="Telemetry" Click="OpenTelemetry" Style="{StaticResource ToolbarButton}" />
                 <Border Width="1" Height="24" Background="#33373E" Margin="4,0" />
                 <Button x:Name="DisconnectButton" Content="Disconnect" Click="DisconnectBackend" IsEnabled="False" Style="{StaticResource ToolbarButton}" Background="#DC2626" Foreground="White" />

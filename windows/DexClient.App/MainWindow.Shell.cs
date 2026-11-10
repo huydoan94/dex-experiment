@@ -43,6 +43,7 @@ public sealed partial class MainWindow
         if (CursorButton.IsChecked != true) CursorIndicator.Visibility = Visibility.Collapsed;
         InputSurface.Focus(FocusState.Programmatic);
     }
+    private void ToggleSystemKeys(object sender, RoutedEventArgs args) => InputSurface.Focus(FocusState.Programmatic);
     private void ToggleLowLatency(object sender, RoutedEventArgs args)
     {
         if (videoSchedule is { } frames) frames.LowLatency = LowLatencyButton.IsChecked == true;

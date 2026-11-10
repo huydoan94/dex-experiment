@@ -13,6 +13,7 @@ public sealed partial class MainWindow : Window
     private int releasedPresenters;
     private readonly CancellationTokenSource lifetime = new();
     private DispatcherQueueTimer? smokeTimer;
+    private SystemKeyHook? systemKeys;
 
     public MainWindow()
     {
@@ -21,6 +22,17 @@ public sealed partial class MainWindow : Window
         string icon = Path.Combine(AppContext.BaseDirectory, "Assets", "DexClient.ico");
         if (File.Exists(icon)) AppWindow.SetIcon(icon);
         CompositionTarget.Rendering += OnRendering;
+        try
+        {
+            systemKeys = new SystemKeyHook(WinRT.Interop.WindowNative.GetWindowHandle(this),
+                () => SystemKeysButton.IsChecked == true && !syntheticLive && !phoneAcceptance && session.CanSendInput && windowActive,
+                (scan, extended, down, virtualKey) =>
+                {
+                    controls.Enabled = session.CanSendInput && windowActive;
+                    Send(controls.Key(scan, extended, down, virtualKey, system: true));
+                });
+        }
+        catch (System.ComponentModel.Win32Exception) { SystemKeysButton.IsEnabled = false; } // Keys stay with Windows.
         Activated += (window, args) =>
         {
             windowActive = args.WindowActivationState != WindowActivationState.Deactivated;
@@ -34,6 +46,7 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) =>
         {
             CompositionTarget.Rendering -= OnRendering;
+            systemKeys?.Dispose(); systemKeys = null;
             smokeTimer?.Stop();
             telemetryDialog?.Hide();
             lifetime.Cancel();
