@@ -106,14 +106,14 @@
    "requirement": "Connect the native Windows app to the proven Python backend with continuous media, ordered input and owned shutdown.",
    "baseline": "Python pipeline already showed real1080p30 and AAC; native synthetic delivery is a separate milestone.",
    "status": "limited",
-   "candidate": "User reported wrong/clipped glyphs during real window resize in2.6.4 export. Canonical dependency and lock now2.6.5, whose release notes document multi-adapter rendering-region fix. Build and synthetic playback/cancel pass; real OS-window resize/maximize/restore and toolbar/modal check pass on a single display adapter. Loaded runtime hash binds to2.6.5. Host confirmation pending. 2026-11-06 standalone export: double-click exe with bundled runtime, packaged settings/token (user request), icon, design-matched telemetry (synthetic screenshot). User (v4-v7, 2026-11-06): A/V smooth, UI clip fixed; v7 adds cursor shapes (4/4 relayed live in user session 232614).",
+   "candidate": "User reported wrong/clipped glyphs during real window resize in2.6.4 export. Canonical dependency and lock now2.6.5, whose release notes document multi-adapter rendering-region fix. Build and synthetic playback/cancel pass; real OS-window resize/maximize/restore and toolbar/modal check pass on a single display adapter. Loaded runtime hash binds to2.6.5. Host confirmation pending. 2026-11-06 standalone export: double-click exe with bundled runtime, packaged settings/token (user request), icon, design-matched telemetry (synthetic screenshot). User (0.0.4-0.0.7, 2026-11-06): A/V smooth, UI clip fixed; 0.0.7 adds cursor shapes (4/4 relayed live in user session 232614).",
    "evidence": [
     "evidence/README.md",
     "evidence/results.json",
     "docs/LESSONS.md"
    ],
    "acceptance": "Continuous live H264/AAC and input through the existing Python backend, native presentation/audio/focus loss, bounded shutdown and subsequent-session reuse. Synthetic build machine reports cannot establish live phone acceptance.",
-   "next_action": "Current user export DexClient-Windows-x64-20261106-v7-standalone.zip (not in this repository) (SHA256 7e6f9d9c...66ca). Physical display/latency acceptance remains open; v3-v6 exports are superseded."
+   "next_action": "Current user export DexClient-Windows-x64-20261106-0.0.7-standalone.zip (not in this repository) (SHA256 7e6f9d9c...66ca). Physical display/latency acceptance remains open; 0.0.3-0.0.6 exports are superseded."
   },
   {
    "id": "input-working-baseline",
@@ -150,7 +150,7 @@
    "requirement": "Measure heartbeat/ACK/RTP and viewer timing before claiming a scheduler or latency improvement.",
    "baseline": "Working Python viewer has opt-in frame timing; historical user observations are approximately1s jitter and150ms response.",
    "status": "limited",
-   "candidate": "Normal-session evidence: reducing routine tracing window60s to3s brings first-minute keyframe median138.59ms to94.25ms; quiet baseline94.15ms. Periodic gaps remain. No optical claim. 2026-11-06 deployed DaemonRecorder (backend owner CPU 91-96->64us/datagram); live A/B one session each: keyframe median 93.89->91.43ms, gaps>100ms 53->51, IN queue peak unchanged ~260KB. Owner CPU is not the keyframe bottleneck. 2026-11-06 async USB: pipelined OUT + 8x16 KB async IN; viewer keyframe span 93->44 ms, video gaps>100 ms 52->3, audio 30->2 (one 60 s session per build; static desktop). Client v6/v7: WASAPI 20 ms, adaptive audio target (settled 80 ms), Low-latency video; user-observed input lag ~150 ms -> improved. Backend input wake deployed. User session 232614: USB IN backlog p99 6.5 ms (max 22 ms); OUT write queue queued-to-done p99 96 ms, max 258 ms, peak 376 writes (ACKs and input share one writer).",
+   "candidate": "Normal-session evidence: reducing routine tracing window60s to3s brings first-minute keyframe median138.59ms to94.25ms; quiet baseline94.15ms. Periodic gaps remain. No optical claim. 2026-11-06 deployed DaemonRecorder (backend owner CPU 91-96->64us/datagram); live A/B one session each: keyframe median 93.89->91.43ms, gaps>100ms 53->51, IN queue peak unchanged ~260KB. Owner CPU is not the keyframe bottleneck. 2026-11-06 async USB: pipelined OUT + 8x16 KB async IN; viewer keyframe span 93->44 ms, video gaps>100 ms 52->3, audio 30->2 (one 60 s session per build; static desktop). Client 0.0.6/0.0.7: WASAPI 20 ms, adaptive audio target (settled 80 ms), Low-latency video; user-observed input lag ~150 ms -> improved. Backend input wake deployed. User session 232614: USB IN backlog p99 6.5 ms (max 22 ms); OUT write queue queued-to-done p99 96 ms, max 258 ms, peak 376 writes (ACKs and input share one writer).",
    "evidence": [
     "evidence/README.md",
     "evidence/results.json",
@@ -173,7 +173,7 @@
     "docs/LESSONS.md"
    ],
    "acceptance": "Focused regressions pass; verify real input/display/session close behavior under a fresh appropriate phone grant before claiming live improvement.",
-   "next_action": "Python viewer (scripts/viewer, .venv) kept as fallback; the v7 Windows client is the main viewer. No session scheduled."
+   "next_action": "Python viewer (scripts/viewer, .venv) kept as fallback; the 0.0.7 Windows client is the main viewer. No session scheduled."
   },
   {
    "id": "python-viewer-lifetime",
@@ -188,7 +188,7 @@
     "docs/LESSONS.md"
    ],
    "acceptance": "Focused regressions pass; verify real input/display/session close behavior under a fresh appropriate phone grant before claiming live improvement.",
-   "next_action": "Python viewer (scripts/viewer, .venv) kept as fallback; the v7 Windows client is the main viewer. No session scheduled."
+   "next_action": "Python viewer (scripts/viewer, .venv) kept as fallback; the 0.0.7 Windows client is the main viewer. No session scheduled."
   },
   {
    "id": "python-rgb-presentation",
@@ -211,14 +211,14 @@
    "requirement": "Use DNS <backend-host> with independent authenticated media/input connections and no SSH in the app; preserve FIFO ownership and normal backend cleanup.",
    "baseline": "Working dexd/TransferDecoder pipeline and Python viewer; previous native client shared one SSH transport.",
    "status": "limited",
-   "candidate": "Direct TLS DNS native session passed615video/1039audio/310input, normal cleanup and next managed-gateway cycle/auth. Nine offline TLS/FIFO/.NET and48 Windows media/TLS checks pass. Long-term/physical-quality acceptance remains open. 2026-11-06: gateway marks DSCP 41 (tos 0xa4 verified live); jitter-buffer client v2 passed native session: audio drops/underrun 646144/4173056 -> 0/2816, resync 2->0, presented p99 69->54ms.",
+   "candidate": "Direct TLS DNS native session passed615video/1039audio/310input, normal cleanup and next managed-gateway cycle/auth. Nine offline TLS/FIFO/.NET and48 Windows media/TLS checks pass. Long-term/physical-quality acceptance remains open. 2026-11-06: gateway marks DSCP 41 (tos 0xa4 verified live); jitter-buffer client 0.0.2 passed native session: audio drops/underrun 646144/4173056 -> 0/2816, resync 2->0, presented p99 69->54ms.",
    "evidence": [
     "evidence/README.md",
     "evidence/results.json",
     "docs/LESSONS.md"
    ],
    "acceptance": "Live H264/AAC and ordered input; idle/input/idle timing, full cleanup, normal cycle and next gateway ready. Offline checks alone do not establish hiccup repair.",
-   "next_action": "User runs v7 standalone daily; scrambled RTP (official PcVer 2.4.1.27) verified in user session 232614. Physical audio/display acceptance remains open."
+   "next_action": "User runs 0.0.7 standalone daily; scrambled RTP (official PcVer 2.4.1.27) verified in user session 232614. Physical audio/display acceptance remains open."
   }
  ],
  "delivery": {
@@ -242,7 +242,7 @@
    "Windows presentation/audio and live input effects are accepted separately from local synthetic tests."
   ],
   "remaining_work": [
-   "User report 2026-11-06: continuous A/V stutter with crackle in all versions; jitter-buffer client v2 fixed the Windows build machine counters (drops/underrun ~0). Physical confirmation on the user's PC pending.",
+   "User report 2026-11-06: continuous A/V stutter with crackle in all versions; jitter-buffer client 0.0.2 fixed the Windows build machine counters (drops/underrun ~0). Physical confirmation on the user's PC pending.",
    "Direct TLS idle/input/idle session passed:310 inputs, input-phase max presented gap78.33ms vs116.02ms idle before. Periodic decode/audio gaps persist; no old-SSH matched control or all-hiccup repair claim. User trial of unchanged direct export is next.",
    "Measure optical end-to-end latency and obtain human observation of physical display/audio and OS/keyboard/device focus behavior. Software timing and131mapping cases do not establish these.",
    "Accept sustained real-network overload/input-stall policy; the reconnect run had a retained428ms encoded-arrival/338ms upload transient, while all sessions cleaned up without held input.",
