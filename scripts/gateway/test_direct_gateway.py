@@ -17,6 +17,8 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'research/native-usb'))
 from direct_gateway import Gateway
 
+NATIVE = os.environ.get('DEX_SKIP_NATIVE') != '1' and (Path(__file__).resolve().parents[2] / 'windows/DexClient.TransportChecks/bin/Release/net10.0/DexClient.TransportChecks.dll').is_file()
+
 
 class GatewayTests(unittest.TestCase):
     @classmethod
@@ -246,13 +248,13 @@ class GatewayTests(unittest.TestCase):
     def native_command(self,mode):
         dll=Path(__file__).resolve().parents[2]/'windows/DexClient.TransportChecks/bin/Release/net10.0/DexClient.TransportChecks.dll'
         return ['dotnet',str(dll),str(self.native_config()),mode]
-    @unittest.skipIf(os.environ.get('DEX_SKIP_NATIVE') == '1', 'native interop runs on WSL/Windows')
+    @unittest.skipUnless(NATIVE, 'needs the built DexClient.TransportChecks (dotnet build on the build machine or Windows)')
     def test_native_pinned_tls_probe_wrong_pin_and_cancel(self):
         for mode in ['probe','wrong-pin','cancel']:
             result=subprocess.run(self.native_command(mode),capture_output=True,text=True,timeout=20)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.until(lambda:self.server.active is None);self.locks_free()
-    @unittest.skipIf(os.environ.get('DEX_SKIP_NATIVE') == '1', 'native interop runs on WSL/Windows')
+    @unittest.skipUnless(NATIVE, 'needs the built DexClient.TransportChecks (dotnet build on the build machine or Windows)')
     def test_native_pair_media_input_and_complete_cleanup(self):
         with subprocess.Popen(self.native_command('pair'),stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) as child:
             input_fd=os.open(self.root/'input.fifo',os.O_RDONLY|os.O_NONBLOCK)
@@ -276,6 +278,7 @@ class GatewayTests(unittest.TestCase):
                 if media_fd is not None:os.close(media_fd)
                 if child.poll() is None:child.kill();child.wait()
 
+    @unittest.skipUnless(NATIVE, 'needs the built DexClient.TransportChecks (dotnet build on the build machine or Windows)')
     def test_native_client_opts_in_and_receives_cursor_shape(self):
         with subprocess.Popen(self.native_command('cursor'),stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) as child:
             input_fd=os.open(self.root/'input.fifo',os.O_RDONLY|os.O_NONBLOCK)

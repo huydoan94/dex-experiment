@@ -9,6 +9,7 @@ import unittest
 import clipboard_bridge as cb
 import idc
 import kms_daemon_live as daemon
+import cursor_relay
 import kms_session_live as session
 from main_channel import ControlCodec, Frame, FrameDecoder, encode_frame
 
@@ -189,7 +190,7 @@ class RelayTests(unittest.TestCase):
             path = Path(d) / "cursor.fifo"
             os.mkfifo(path)
             reader = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
-            relay = daemon.CursorRelay(str(path))
+            relay = cursor_relay.CursorRelay(str(path))
             text = "y" * 200000
             relay.clip(text)
             relay.pending = (1002, 0)
@@ -215,7 +216,7 @@ class RelayTests(unittest.TestCase):
             path = Path(d) / "cursor.fifo"
             os.mkfifo(path)
             reader = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
-            relay = daemon.CursorRelay(str(path))
+            relay = cursor_relay.CursorRelay(str(path))
             sent = [b"FB " + base64.b64encode(bytes([i]) * 49152) + b"\n" for i in range(4)]
             for line in sent:
                 relay.line(line)

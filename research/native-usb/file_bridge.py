@@ -25,6 +25,34 @@ MAX_FILES = 1000                          # the PC app refuses more
 COPY, DRAG = 0, 1
 # A FILE clip sent before the phone is ready gets no DRAGDROP: resend it.
 CLIP_RETRY_SECONDS, CLIP_TRIES = 3, 5
+# The phone's DeX app keeps its drag operations (r2.k: a map by TransferID plus a
+# 25-entry history whose eviction removes that ID from the map) for as long as its
+# process lives, across our sessions. A TransferID reused soon after an earlier
+# session's same ID is evicted together with that old entry, and the drop then fails
+# ("FILE OPERATION ID DOESN'T EXIST", phone log 2026-11-11). IDs therefore continue
+# across sessions (saved_transfer_id / save_transfer_id) instead of restarting at 1.
+MAX_TRANSFER_ID = 999
+
+
+def saved_transfer_id(path):
+    """The last TransferID used, or 0 when none was saved (or it cannot be read)."""
+    try:
+        value = int(path.read_text().strip())
+    except (OSError, ValueError, AttributeError):
+        return 0
+    return value if 0 <= value <= MAX_TRANSFER_ID else 0
+
+
+def save_transfer_id(path, value):
+    """Best effort: a failed save only means the next session may reuse recent IDs."""
+    if path is None:
+        return
+    try:
+        temporary = path.with_name(path.name + ".new")
+        temporary.write_text("%d\n" % value)
+        temporary.replace(path)
+    except OSError:
+        pass
 COMMON_REQUEST = (0x64, 0x65, 0x66)       # start, body, end (commonMessageStart/Buffer/End)
 FILE_START, FILE_DATA, FILE_END = 0x28, 0x29, 0x2a
 
@@ -46,7 +74,8 @@ def file_start(size, name):
 
 class FileBridge:
     def __init__(self, send_kms, send_clip_files, open_file_socket, send_file, ask_viewer,
-                 log=lambda event, **fields: None, clock=None, report=lambda file, delivered, done: None):
+                 log=lambda event, **fields: None, clock=None, report=lambda file, delivered, done: None,
+                 transfer_id=0, remember=lambda transfer_id: None):
         self.send_kms, self.send_clip_files = send_kms, send_clip_files
         self.open_file_socket, self.send_file = open_file_socket, send_file
         self.ask_viewer, self.log = ask_viewer, log
@@ -55,7 +84,8 @@ class FileBridge:
         self.report = report
         self.state = "idle"
         self.files, self.op = [], COPY
-        self.transfer_id = self.message_id = 0
+        self.transfer_id, self.message_id = transfer_id, 0
+        self.remember = remember   # remember(transfer_id) after each new TransferID
         self.dragdrop_id = None
         self.index = self.chunk = self.sent = 0
         self.connection = None
@@ -69,7 +99,7 @@ class FileBridge:
             self.counts["offers_refused"] += 1
             return
         self.files, self.op = list(files), op
-        self.transfer_id = self.transfer_id % 999 + 1
+        self._next_transfer_id()
         self.dragdrop_id = None
         self.counts["offers"] += 1
         self.log("files_offered", operation=op, files=len(files), bytes=sum(s for _, s in files))
@@ -174,13 +204,17 @@ class FileBridge:
         (10) ends as a cancel (e2/h q: no files -> ACTION_CANCEL), and forget this transfer."""
         if self.op != DRAG or self.state not in ("wait_phone", "sending"):
             return
-        self.transfer_id = self.transfer_id % 999 + 1
+        self._next_transfer_id()
         self.message_id = self.message_id % 999 + 1
         self.send_kms(common_request(self.message_id, {"TYPE": "REQ", "MSG": "InitFileTransfer", "PARAM": {
             "FileOperation": DRAG, "TransferID": self.transfer_id, "FileTransferErrorCodeFromPC": 0, "FileInfo": []}}))
         self.state = "idle"
         self.counts["drags_cancelled"] += 1
         self.log("files_drag_cancelled")
+
+    def _next_transfer_id(self):
+        self.transfer_id = self.transfer_id % MAX_TRANSFER_ID + 1
+        self.remember(self.transfer_id)
 
     def viewer_failed(self, reason="viewer"):
         if self.state != "idle":

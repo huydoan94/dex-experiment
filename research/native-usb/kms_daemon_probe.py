@@ -26,6 +26,7 @@ import rtsp_udp_live
 import rtsp_udp_long
 import kms_hover_live
 import kms_daemon_live as daemon
+import daemon_sink
 import ui_confirm_display0 as ui_confirm
 import wfd_startup as wfd
 from tunnel_probe import emit
@@ -137,8 +138,9 @@ def main(argv=None):
                                   bus=a.bus,address=a.address))
         if len(devices)!=1:
             raise RuntimeError("expected exactly one selected phone")
-        sink=daemon.DetachableSink(a.ts_fifo,notify=events).start()
+        sink=daemon_sink.DetachableSink(a.ts_fifo,notify=events).start()
         owner=daemon.DaemonOwner(usb.util,result,sink,a.stop_file,a.input_fifo,on_streaming=streaming)
+        owner.state_dir=a.output.parent   # dexd's log folder: outlives sessions and backend restarts
         sessions=conn_transfer.TransferSessions(owner)
         auth_probe.probe(devices[0],owner,usb.core.USBTimeoutError,a.output,result,
                          after_auth=after_auth,max_requests=daemon.UNLIMITED,
