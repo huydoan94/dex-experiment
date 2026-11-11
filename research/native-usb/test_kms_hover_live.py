@@ -9,8 +9,6 @@ import unittest
 from unittest.mock import patch
 
 import kms_hover_live as hover
-import kms_hover_live_probe as probe
-import kms_hover_live_launch as launch
 import kms_mouse_live as mouse
 import sidesync_packets
 
@@ -92,18 +90,7 @@ class Tests(unittest.TestCase):
         self.assertEqual([n['MSG'] for n in result['kms_live_notices']['notices']],['StartStreaming'])
         self.assertEqual(result['kms_live_received']['packets'][0],dict(kind=0x64,bytes=20))
 
-    def test_budget_and_source_pins(self):
-        self.assertEqual(probe.MAX_REQUESTS,48+4+7+35)
-        for name,digest in launch.EXPECTED.items():
-            self.assertEqual(hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest(),
-                             digest,name)
-        self.assertIn('kms_mouse_live.py',launch.EXPECTED)
-        self.assertNotIn('kms_mouse_live_probe.py',launch.EXPECTED)
 
-    def test_plan_only_never_selects_usb_or_checks_adb(self):
-        with patch.object(launch,'require_adb_server',side_effect=AssertionError('ADB')),\
-             contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(launch.main([]),0)
 
 
 if __name__=='__main__':

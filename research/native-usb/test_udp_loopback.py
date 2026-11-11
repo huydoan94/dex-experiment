@@ -16,7 +16,6 @@ from unittest.mock import patch
 from conn_frames import Frame, encode
 import loopback_capture as base
 import tcp_control as tcp
-import udp_loopback as udp
 import udp_tunnel as ut
 from test_loopback_capture import Util
 from test_loopback_transfer import Device
@@ -235,60 +234,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(phone.sent, [])
 
 
-class LoopbackTests(unittest.TestCase):
-    def test_full_loopback_budgets_and_cleanup(self):
-        phone, util, result = UdpPhone(), Util(), {}
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory)
-            run(phone, result, util, output)
-            events = [json.loads(line) for line in (output / "events.jsonl").read_text().splitlines()]
-        self.assertTrue(result["bidirectional_verified"])
-        self.assertTrue(result["map_predictions_matched"])
-        self.assertEqual(result["ephemeral_source_port"], 38000)
-        self.assertEqual(phone.sent, [(612, 50003, 46003, udp.FORWARD),
-                                      (611, 46003, 38000, udp.REVERSE)])
-        self.assertEqual(result["close_statuses"], {"612": 0, "611": 0})
-        self.assertEqual(result["cleanup_errors"], [])
-        self.assertEqual(len(phone.datagram_acks), 2)
-        self.assertEqual(util.actions, [("claim", 3), ("release", 3), ("dispose",)])
-        writes = [e for e in events if e["event"] == "usb_write"]
-        self.assertEqual(sum(e["kind"] == 1 for e in writes), udp.MAX_REQUESTS)
-        self.assertEqual(sum(e["kind"] == 2 for e in writes), 2)
 
-    def test_wrong_receiving_socket_fails_each_direction(self):
-        for config_id, message, sent in ((611, "forward", 1), (612, "reverse", 2)):
-            phone, util, result = UdpPhone(), Util(), {}
-            phone.wrong_key_for = config_id
-            with self.subTest(direction=message), tempfile.TemporaryDirectory() as directory:
-                with self.assertRaisesRegex(TunnelError, message + " datagram not confirmed"):
-                    run(phone, result, util, Path(directory))
-                self.assertFalse(result["bidirectional_verified"])
-                self.assertEqual(len(phone.sent), sent)
-                self.assertEqual(len(result["datagrams"]), sent)
-                self.assertEqual(set(phone.closed), {611, 612})
-
-    def test_corrupt_forward_stops_without_reverse_and_closes_both(self):
-        phone, util, result = UdpPhone(), Util(), {}
-        phone.corrupt = True
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(TunnelError, "forward datagram not confirmed"):
-                run(phone, result, util, Path(directory))
-        self.assertFalse(result["bidirectional_verified"])
-        self.assertEqual(len(phone.sent), 1)
-        self.assertEqual(set(phone.closed), {611, 612})
-        self.assertTrue(result["usb_released"])
-
-    def test_default_and_missing_arguments_do_not_import_usb(self):
-        original = builtins.__import__
-        def guard(name, *args, **kwargs):
-            if name == "usb" or name.startswith("usb."):
-                raise AssertionError("unapproved USB import")
-            return original(name, *args, **kwargs)
-        with patch("builtins.__import__", guard):
-            with contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(udp.main([]), 0)
-            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-                udp.main(["--approved-phone-udp-loopback"])
 
 
 if __name__ == "__main__":

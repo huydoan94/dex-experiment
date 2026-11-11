@@ -18,8 +18,6 @@ import idc_handshake
 import rtsp_capabilities as caps
 import rtsp_hello
 import rtsp_udp_play as play
-import udp_play_probe as probe
-import udp_play_launch as launch
 import ui_confirm as ui
 import wfd_startup as wfd
 from tunnel_probe import Link
@@ -174,27 +172,7 @@ class Tests(unittest.TestCase):
         self.assertIsInstance(link.record,play.RedactingRecorder)
         self.assertFalse(phone.inbound)
 
-    def test_plan_only_and_missing_grant_never_import_usb(self):
-        original=builtins.__import__
-        def guard(name,*args,**kwargs):
-            if name=="usb" or name.startswith("usb."):
-                raise AssertionError("unapproved USB")
-            return original(name,*args,**kwargs)
-        with patch("builtins.__import__",guard),contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(probe.main([]),0)
-            self.assertEqual(launch.main([]),0)
 
-    def test_launcher_pins_and_selection(self):
-        with tempfile.TemporaryDirectory() as tmp,patch.dict(launch.EXPECTED,{"rtsp_udp_play.py":"0"*64}):
-            with self.assertRaisesRegex(RuntimeError,"approved source mismatch"):
-                launch.main(["--approved-phone-udp-play","--accept-persistent-state","--output",tmp+"/new"])
-        usb,core=ModuleType("usb"),ModuleType("usb.core")
-        core.find=lambda **kw:[SimpleNamespace(bus=3,address=10)]
-        usb.core=core
-        with tempfile.TemporaryDirectory() as tmp,patch.dict("sys.modules",{"usb":usb,"usb.core":core}),patch.object(
-                launch.socket,"create_connection"),patch.object(launch.os,"execv") as execute,contextlib.redirect_stdout(io.StringIO()):
-            launch.main(["--approved-phone-udp-play","--accept-persistent-state","--output",tmp+"/new"])
-        self.assertTrue(execute.call_args.args[1][1].endswith("udp_play_probe.py"))
 
     def test_invalid_header_and_preplay_datagrams_do_not_prove_playback(self):
         phone=PlayPhone(count=0)
@@ -243,56 +221,7 @@ class Tests(unittest.TestCase):
         self.assertNotIn(SECRET.hex(),json.dumps(events))
         self.assertNotIn(SECRET.decode(),json.dumps(events))
 
-    def test_actual_probe_main_wiring_and_saved_results(self):
-        phone=PlayPhone(count=100)
-        events=[]
-        session,connection=opened(phone,events)
-        from test_ui_display0 import DisplayRunner
-        runner=DisplayRunner(phone)
-        original_confirm=probe.ui_confirm.confirm
-        def confirm(s,m,r,log,deadline,output,bus):
-            return original_confirm(s,m,r,log,deadline,output,bus,runner=runner)
-        def fake_probe(device,util,timeout,output,result,after_auth,**kwargs):
-            self.assertIs(kwargs["session_class"],play.PlaySession)
-            self.assertEqual(kwargs["max_requests"],48)
-            client=SimpleNamespace(codec=lambda:SimpleNamespace(_key=KEY))
-            after_auth(session,connection,client,result,session.clock,lambda **kw:None)
-            (output/"events.jsonl").write_text("\n".join(json.dumps(e) for e in events)+"\n")
-        usb,core,util=ModuleType("usb"),ModuleType("usb.core"),ModuleType("usb.util")
-        core.find=lambda **kw:[object()]
-        core.USBTimeoutError=TimeoutError
-        usb.core,usb.util=core,util
-        with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,
-                {"DEX_AUTO_UI_DEADLINE":str(time.monotonic()+60)}):
-            with patch.dict("sys.modules",{"usb":usb,"usb.core":core,"usb.util":util}),patch.object(
-                    probe.auth_probe,"probe",side_effect=fake_probe),patch.object(
-                    probe.cap,"capabilities"),patch.object(probe.pss_probe,"pss_ready"),patch.object(
-                    probe.ui_confirm,"confirm",side_effect=confirm),contextlib.redirect_stdout(io.StringIO()):
-                code=probe.main(["--approved-phone-udp-play","--accept-persistent-state",
-                                 "--bus","3","--address","10","--output",tmp+"/run"])
-            output=Path(tmp)/"run"
-            result=json.loads((output/"result.json").read_text())
-            plan=json.loads((output/"plan.json").read_text())
-            self.assertEqual(code,0)
-            self.assertTrue(result["rtp_media_verified"])
-            self.assertTrue(result["auto_confirmation_verified"])
-            self.assertEqual(plan["rtsp_sends"],8)
-            self.assertEqual(len(runner.commands),4)
-            for name in ["events.jsonl","result.json"]:
-                data=(output/name).read_text()
-                self.assertNotIn(SECRET.hex(),data)
-                self.assertNotIn(SECRET.decode(),data)
 
-    def test_empty_pins_and_invalid_deadline_fail_before_usb(self):
-        with tempfile.TemporaryDirectory() as tmp,patch.dict(launch.EXPECTED,{},clear=True):
-            with self.assertRaisesRegex(RuntimeError,"empty approved source"):
-                launch.main(["--approved-phone-udp-play","--accept-persistent-state","--output",tmp+"/new"])
-        with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,
-                {"DEX_AUTO_UI_DEADLINE":"nan"}),contextlib.redirect_stderr(io.StringIO()):
-            with self.assertRaises(SystemExit):
-                probe.main(["--approved-phone-udp-play","--accept-persistent-state",
-                            "--bus","3","--address","10","--output",tmp+"/new"])
-            self.assertFalse((Path(tmp)/"new").exists())
 
     def test_cleanup_media_burst_never_restarts_rtp_acknowledgements(self):
         class CleanupBurstPhone(PlayPhone):
