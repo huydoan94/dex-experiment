@@ -18,7 +18,7 @@ How each problem was fixed: [docs/FIXES.md](../docs/FIXES.md). Full history is k
 - Phone connect refusal is avoided by replugging; cause unknown.
 - No physical/optical latency or listening measurement (user feel is the test).
 - 19 older test modules need capture folders archived on 2026-11-06.
-- Files phone to PC not built (docs/FILE_TRANSFER.md); usb_tunnel stops a session after 16 phone-initiated connections in total.
+- Files phone to PC not built (docs/FILE_TRANSFER.md); it needs usb_tunnel to count open phone-initiated connections, not a lifetime total of 16 (sessions use 1 today).
 - Resolution: the phone, not the PC, picks from the offered list; it gave DeX on PC only
   1080p30 (720p60 and 1080p60 refused, 2026-11-10). `video_mode` site setting kept for tests.
 - Windows build machine is Windows 10; the app declares Windows 11 as minimum. Release
