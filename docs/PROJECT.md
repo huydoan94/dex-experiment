@@ -81,6 +81,8 @@ build, set Archive on the outputs (`$_.Attributes = $_.Attributes -bor 'Archive'
 bundles the runtime, `backend.json` and the token (`gateway-token`).
 Local gateway regression: `python3 scripts/gateway/test_direct_gateway.py`.
 Docs check: `python3 scripts/session-preflight.py`.
+Pins: after editing a pinned backend file, `python3 scripts/pins.py` refreshes
+every pin (dexd.EXPECTED, the reconnect scripts) and MANIFEST.sha256.
 
 ## Known limits
 

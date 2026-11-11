@@ -112,3 +112,9 @@ each area. Raw measurements are kept outside this repository.
   non-blocking `os.write` and dropped what the FIFO did not take; a 64 KiB `FB` line
   was cut, so the gateway rejected it. A partly written line now finishes first, and
   no other line goes inside it.
+- **2026-11-11 PC-to-phone drag sometimes did nothing** — the phone's DeX app keeps
+  drag operations by TransferID in a static map plus a 25-entry history; evicting an
+  old entry removes its ID from the map. Our TransferIDs restarted at 1 every
+  session, so a reused ID was removed together with its old twin and the drop failed
+  ("FILE OPERATION ID DOESN'T EXIST" in the phone log). IDs now continue across
+  sessions (`dexd/file-transfer-id`).
