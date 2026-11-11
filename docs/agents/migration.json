@@ -165,7 +165,7 @@
    "scope": "input",
    "requirement": "Keep rendering responsive during input transport stalls, preserve discrete input order and release on loss of ownership.",
    "baseline": "Existing scripts/viewer/dex_desktop.py and the documented dexd Python lifecycle.",
-   "status": "limited",
+   "status": "deferred",
    "candidate": "Canonical FIFO worker deployed under explicit remaining-work authorization; normal60.1s live session passed with hover/Shift, queue peak3, worker stopped, no held keys/errors;17 daemon/FIFO and7 worker tests pass.",
    "evidence": [
     "evidence/README.md",
@@ -173,14 +173,14 @@
     "docs/LESSONS.md"
    ],
    "acceptance": "Focused regressions pass; verify real input/display/session close behavior under a fresh appropriate phone grant before claiming live improvement.",
-   "next_action": "Python viewer (scripts/viewer, .venv) kept as fallback; the 0.0.7 Windows client is the main viewer. No session scheduled."
+   "next_action": "Python viewer (scripts/viewer) removed 2026-11-11 (git history); the Windows client 1.0.0 is the only viewer."
   },
   {
    "id": "python-viewer-lifetime",
    "scope": "startup",
    "requirement": "Clean partial viewer startup and GUI/decoder errors without leaving owned children or stale input ownership.",
    "baseline": "Existing scripts/viewer/dex_desktop.py and the documented dexd Python lifecycle.",
-   "status": "limited",
+   "status": "deferred",
    "candidate": "Direct gateway pair/partial startup, EOF, busy owner/locks pass local regressions. Real direct session cleanly released USB, input, app/task; normal cycle restored managed gateway/black-screen idle. Abnormal real-network failure and sustained acceptance remain limited.",
    "evidence": [
     "evidence/README.md",
@@ -188,14 +188,14 @@
     "docs/LESSONS.md"
    ],
    "acceptance": "Focused regressions pass; verify real input/display/session close behavior under a fresh appropriate phone grant before claiming live improvement.",
-   "next_action": "Python viewer (scripts/viewer, .venv) kept as fallback; the 0.0.7 Windows client is the main viewer. No session scheduled."
+   "next_action": "Python viewer (scripts/viewer) removed 2026-11-11 (git history); the Windows client 1.0.0 is the only viewer."
   },
   {
    "id": "python-rgb-presentation",
    "scope": "media",
    "requirement": "Avoid the unnecessary full RGB copy while retaining decoded-buffer lifetime and the existing H264/AAC path.",
    "baseline": "Existing scripts/viewer/dex_desktop.py and the documented dexd Python lifecycle.",
-   "status": "limited",
+   "status": "deferred",
    "candidate": "Implemented and offline-tested in the existing Python viewer; live phone/Windows acceptance remains unverified.",
    "evidence": [
     "evidence/README.md",
@@ -203,7 +203,7 @@
     "docs/LESSONS.md"
    ],
    "acceptance": "Focused regressions pass; verify real input/display/session close behavior under a fresh appropriate phone grant before claiming live improvement.",
-   "next_action": "Reuse passing offline evidence; do not touch the phone or deploy without a new appropriate grant."
+   "next_action": "Python viewer (scripts/viewer) removed 2026-11-11 (git history); the Windows client 1.0.0 is the only viewer."
   },
   {
    "id": "native-direct-tls",
