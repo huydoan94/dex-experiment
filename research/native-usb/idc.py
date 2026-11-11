@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from main_channel import IV
+import site_env
 
 SEP = "/&%"
 MAX_UTF = 0xffff
@@ -38,14 +39,14 @@ def _aes_decrypt(key, cipher):
     return (unpadder.update(padded) + unpadder.finalize()).decode("utf-8")
 
 
-def connect_info(listener_port, device_id="<lab>", device="<lab>", net="USB",
-                 name="<lab>"):
+def connect_info(listener_port, device_id=None, device=None, net="USB", name=None):
     # o2/a WimpDevice.parse expects >=8 "/&%" fields; field[0] = the port the
     # phone will dial back (Integer.parseInt). The rest are device identity it
     # stores. No spaces (the IDC text is space-tokenised).
     if not isinstance(listener_port, int) or not 1 <= listener_port <= 65535:
         raise ValueError("listener_port must be a uint16")
-    fields = [str(listener_port), "0", device_id, "false", "2.4.1.27", device, net, name]
+    sink = site_env.sink_name()
+    fields = [str(listener_port), "0", device_id or sink, "false", "2.4.1.27", device or sink, net, name or sink]
     info = SEP.join(fields)
     if " " in info:
         raise ValueError("connect info must not contain spaces")

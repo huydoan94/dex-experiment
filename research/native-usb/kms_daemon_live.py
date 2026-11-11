@@ -15,6 +15,7 @@ as kms_session_live (unchanged), with:
 Saved results stay counts only.
 """
 from array import array
+import base64
 from collections import Counter,deque
 import dataclasses
 import errno
@@ -26,7 +27,9 @@ import sys
 import threading
 import time
 
+import clipboard_bridge
 import duplex_link
+import file_bridge
 from threaded_input import ThreadedInputReader,_DISCONNECT as DISCONNECT
 import kms_input_live
 import kms_session_live as base
@@ -36,6 +39,9 @@ import rtsp_udp_long as long
 import rtsp_udp_play as play
 from sidesync_packets import VERSION
 import tcp_control
+from usb_tunnel import TunnelError
+import wfd_startup as wfd
+from tunnel_probe import SERVICE_UID
 
 # Ten years: "until stopped" without changing the pinned arithmetic.
 FOREVER_SECONDS=10*365*86400
@@ -821,6 +827,9 @@ class InputReader(base.InputReader):
 # "IS_NIGHT_MODE":bool}}, framed commonMessageStart/Buffer/End as kms_hover_live
 # records them at startup (request 0x64-0x66, response 0x67-0x69).
 CURSOR_MSG="MOUSE_CURSOR_CHANGE"
+# Host ports for clipboard IDC requests: one fresh control connection each, clear of
+# the startup ports (IDC 50002, control 50003, KMS 50008); never reused in a session.
+IDC_HOST_FIRST,IDC_HOST_LAST=50100,50999
 COMMON_START,COMMON_BODY,COMMON_END=(0x64,0x67),(0x65,0x68),(0x66,0x69)
 MAX_COMMON_BYTES=16384
 CURSOR_OPEN_RETRY_SECONDS=.5
@@ -841,6 +850,24 @@ class CursorRelay:
         self.pending=None
         self.last_sent=None
         self.counts=Counter()
+        # Phone clipboard text for the viewer: one "V <base64>" line, written in pieces
+        # (a FIFO takes at most its buffer at once); only the latest waits behind it.
+        self.clip_out=bytearray()
+        self.clip_started=False
+        self.clip_next=None
+        # File transfer (file_bridge): the phone's InitFileTransfer responses, and the
+        # short "G <file> <chunk>" requests for the viewer, in order.
+        self.file_messages=[]
+        self.lines=deque()
+        self.seen=[]
+
+    def clip(self,text):
+        line=b"V "+base64.b64encode(text.encode("utf-8"))+b"\n"
+        if self.clip_started:
+            self.clip_next=line
+        else:
+            self.clip_out=bytearray(line)
+        self.counts["clip_queued"]+=1
 
     def feed(self,data):
         """Consume complete SideSync frames of the KMS byte stream from self.offset."""
@@ -870,6 +897,12 @@ class CursorRelay:
             message=json.loads(raw.decode("utf-8"))
         except ValueError:
             return
+        if isinstance(message,dict):
+            # Names only (diagnostics for file transfer); never parameters.
+            self.seen.append("%s %s"%(str(message.get("TYPE"))[:8],str(message.get("MSG"))[:40]))
+        if isinstance(message,dict) and message.get("MSG")=="InitFileTransfer" and message.get("TYPE")=="RESP":
+            self.file_messages.append(message)
+            return
         if not isinstance(message,dict) or message.get("MSG")!=CURSOR_MSG:
             return
         param=message.get("PARAM")
@@ -880,8 +913,11 @@ class CursorRelay:
         self.counts["changes"]+=1
         self.pending=(shape,1 if param.get("IS_NIGHT_MODE") is True else 0)
 
+    def line(self,data):
+        self.lines.append(data)
+
     def flush(self):
-        if self.pending is None or self.error is not None:
+        if (self.pending is None and not self.clip_out and not self.lines) or self.error is not None:
             return
         try:
             if self.fd is None:
@@ -901,16 +937,33 @@ class CursorRelay:
                     raise OSError("cursor path is not a FIFO")
                 self.fd=fd
             try:
-                os.write(self.fd,b"C %d %d\n"%self.pending)
+                # A cursor line never goes inside a partly written clipboard line.
+                if self.pending is not None and not self.clip_started:
+                    os.write(self.fd,b"C %d %d\n"%self.pending)
+                    self.counts["sent"]+=1
+                    self.last_sent,self.pending=self.pending,None
+                while self.lines and not self.clip_started:
+                    os.write(self.fd,self.lines[0])
+                    self.lines.popleft()
+                    self.counts["lines_sent"]+=1
+                while self.clip_out:
+                    count=os.write(self.fd,bytes(self.clip_out[:65536]))
+                    del self.clip_out[:count]
+                    self.clip_started=bool(self.clip_out)
+                    if not self.clip_out:
+                        self.counts["clip_sent"]+=1
+                        if self.clip_next is not None:
+                            self.clip_out,self.clip_next=bytearray(self.clip_next),None
             except BlockingIOError:
                 self.counts["full"]+=1
                 return
             except BrokenPipeError:
                 self.close()
                 self.counts["reader_left"]+=1
+                # The next reader must not start inside a half-written line.
+                if self.clip_started:
+                    self.clip_out,self.clip_started=bytearray(),False
                 return
-            self.counts["sent"]+=1
-            self.last_sent,self.pending=self.pending,None
         except OSError as error:
             self.error=type(error).__name__
             self.close()
@@ -1201,7 +1254,132 @@ class DaemonSession(base.SessionInput):
         if getattr(self,"cursor",None) is None:
             self.cursor=CursorRelay(os.path.join(os.path.dirname(fifo),"cursor.fifo"))
         self.cursor.feed(connection.received)
+        while self.cursor.seen:
+            seen=self.cursor.seen.pop(0)
+            if not seen.endswith(CURSOR_MSG):
+                self.log("kms_common_message",message=seen)
+            if seen=="REQ FeatureList" and not getattr(self,"features_sent",False):
+                # SamsungDeX.exe tells the phone it takes file transfer over KMS; the phone
+                # (KMSServiceManager.j) then sets KMS_FT_SUPPORTED and answers its features.
+                self.features_sent=True
+                try:
+                    self.send(connection,file_bridge.common_request(900,{"TYPE":"REQ","MSG":"FeatureList",
+                                                                         "PARAM":"KMS_FT_SUPPORTED"}),timeout_s=2)
+                    self.log("kms_features_sent")
+                except TunnelError as error:
+                    self.log("kms_features_error",error=str(error)[:80])
+        bridge=getattr(self,"clipboard",None)
+        if bridge is not None:
+            text=bridge.poll()
+            if text is not None:
+                self.cursor.clip(text)
+                self.log("clipboard_from_phone",characters=len(text))
+            files=getattr(self,"files",None)
+            if files is not None:
+                try:
+                    files.tick()
+                    while bridge.dragdrops:
+                        files.dragdrop(bridge.dragdrops.pop(0))
+                    while self.cursor.file_messages:
+                        message=self.cursor.file_messages.pop(0)
+                        param=message.get("PARAM") if isinstance(message.get("PARAM"),dict) else {}
+                        self.log("files_phone_response",result=message.get("RESULT"),reason=str(message.get("REASON"))[:40],
+                                 transfer=param.get("TransferID"),state=files.state,expected=files.transfer_id)
+                        files.phone_response(message)
+                except TunnelError as error:
+                    files.viewer_failed("send: "+str(error)[:80])
         self.cursor.flush()
+
+    def _clipboard_bridge(self):
+        """Created at the first clipboard line, from the connections kms_daemon_probe left here."""
+        if getattr(self,"clipboard",None) is None:
+            main=getattr(self,"main_connection",None)
+            codec=getattr(self,"main_codec",None)
+            if main is None or codec is None or main.closed_by_phone:
+                return None
+            self.clipboard=clipboard_bridge.ClipboardBridge(
+                lambda connection,data: self.send(connection,data,timeout_s=1),main,codec,
+                getattr(self,"idc_key",None),self._idc_command)
+        return self.clipboard
+
+    def _files(self,events):
+        bridge=self._file_bridge()
+        if bridge is None:
+            self.dropped["files"]+=len(events)
+            return
+        for event in events:
+            try:
+                if event[0]=="FO":
+                    bridge.offer(event[1],event[2])
+                elif event[0]=="B":
+                    bridge.viewer_chunk(event[1])
+                elif event[0]=="FC":
+                    bridge.cancel_drag()
+                else:
+                    bridge.viewer_failed()
+            except TunnelError as error:
+                bridge.viewer_failed("send: "+str(error)[:80])
+
+    def _idc_command(self,payload):
+        """One IDC command on a fresh connection to the phone's control port, then close it."""
+        port=getattr(self,"next_idc_host",IDC_HOST_FIRST)
+        if port>IDC_HOST_LAST:
+            raise TunnelError("no IDC host port left in this session")
+        self.next_idc_host=port+1
+        connection=self.connect(port,config_id=wfd.CONTROL_CONFIG,timeout_s=2)
+        try:
+            self.send(connection,payload,timeout_s=1)
+        finally:
+            try:
+                self.disconnect(connection,timeout_s=1)
+            except TunnelError:
+                pass
+
+    def _file_bridge(self):
+        if getattr(self,"files",None) is None:
+            bridge=self._clipboard_bridge()
+            kms=getattr(self,"kms_connection",None)
+            if bridge is None or kms is None or getattr(self,"cursor",None) is None:
+                return None
+            self.files=file_bridge.FileBridge(
+                lambda data: self.send(self.kms_connection,data,timeout_s=2),
+                bridge.files_to_phone,self._open_file_socket,
+                lambda connection,data: self.send(connection,data,timeout_s=2),
+                lambda index,chunk: self.cursor.line(b"G %d %d\n"%(index,chunk)),self.log,
+                report=lambda file,delivered,done: self.cursor.line(b"S %d %d %d\n"%(file,delivered,int(done))))
+        return self.files
+
+    def _open_file_socket(self):
+        """The phone's file socket (port 30831), opened when the phone first asks for files."""
+        if file_bridge.FILE_CONFIG not in self.configs:
+            self.open_config(file_bridge.FILE_CONFIG,SERVICE_UID,file_bridge.FILE_PORT,timeout_s=2)
+        port=getattr(self,"next_file_host",file_bridge.FILE_HOST)
+        self.next_file_host=port+100
+        return self.connect(port,config_id=file_bridge.FILE_CONFIG,timeout_s=2)
+
+    def _clipboard(self,events):
+        files=[event for event in events if event[0] in ("FO","B","BX","FC")]
+        if files:
+            events=[event for event in events if event[0] not in ("FO","B","BX","FC")]
+            self._files(files)
+        if not events:
+            return
+        bridge=self._clipboard_bridge()
+        if bridge is None:
+            self.dropped["clipboard"]+=len(events)
+            return
+        for event in events:
+            # Clipboard is a convenience: a failure is logged and never ends the stream.
+            try:
+                if event[0]=="P":
+                    bridge.to_phone(event[1])
+                    self.log("clipboard_to_phone",characters=len(event[1]))
+                else:
+                    sent=bridge.request_from_phone()
+                    self.log("clipboard_request",sent=sent)
+            except TunnelError as error:
+                bridge.counts["send_errors"]+=1
+                self.log("clipboard_error",kind=event[0],error=str(error)[:120])
 
     def _request(self,*args,**kwargs):
         self.requesting+=1
@@ -1320,6 +1498,10 @@ class DaemonSession(base.SessionInput):
         if getattr(self,"cursor",None) is not None:
             self.cursor.close()
             result["kms_input"]["cursor"]=self.cursor.summary()
+        if getattr(self,"clipboard",None) is not None:
+            result["kms_input"]["clipboard"]=self.clipboard.summary()
+        if getattr(self,"files",None) is not None:
+            result["kms_input"]["files"]=self.files.summary()
         timing=getattr(self,"usb_timing",None)
         if timing is not None:
             result["usb_timing"]=timing.summary()

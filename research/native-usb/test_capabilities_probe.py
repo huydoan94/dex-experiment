@@ -152,7 +152,7 @@ class Tests(unittest.TestCase):
         self.assertIs(params["SinkAutoStartStatus"], False)
         self.assertIs(params["SinkIDCConnectBeforehand"], False)
         params["SinkName"] = "altered"
-        self.assertEqual(p.terminal_info()["PARAM"]["SinkName"], "<lab>")
+        self.assertEqual(p.terminal_info()["PARAM"]["SinkName"], "DeX-PC")
 
     def test_default_and_persistence_guard_make_no_usb_import(self):
         original = builtins.__import__

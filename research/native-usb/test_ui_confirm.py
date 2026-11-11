@@ -24,7 +24,7 @@ SERIAL=b"List of devices attached\nRFTEST device usb:3-1 product:y2s model:SM_G9
 FOCUS=b"  mCurrentFocus=Window{abc u0 com.sec.android.app.dexonpc/Dialog}\n"
 XML=b'''<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
 <hierarchy rotation="0"><node package="com.sec.android.app.dexonpc" bounds="[0,0][1440,3200]">
-<node package="com.sec.android.app.dexonpc" text="Start Samsung DeX on <lab>?" bounds="[100,1000][1340,1200]" />
+<node package="com.sec.android.app.dexonpc" text="Start Samsung DeX on DeX-PC?" bounds="[100,1000][1340,1200]" />
 <node package="com.sec.android.app.dexonpc" text="Start now" resource-id="android:id/button1"
 class="android.widget.Button" enabled="true" clickable="true" bounds="[900,1600][1300,1700]" />
 </node></hierarchy>UI hierchary dumped to: /proc/self/fd/1
@@ -93,7 +93,7 @@ class Tests(unittest.TestCase):
                      XML.replace(b'clickable="true"',b'clickable="false"'),
                      XML.replace(b"android:id/button1",b"android:id/button2"),
                      XML.replace(b"com.sec.android.app.dexonpc",b"com.android.systemui"),
-                     XML.replace(b"on <lab>?",b"on other?"),
+                     XML.replace(b"on DeX-PC?",b"on other?"),
                      XML.replace(b"[900,1600][1300,1700]",b"[1400,1600][1600,1700]"),
                      XML.replace(b"[900,1600][1300,1700]",b"[1,1][1,1]"),
                      XML+b"<hierarchy></hierarchy>",
@@ -240,7 +240,7 @@ class SamsungReplayTests(unittest.TestCase):
         fixture=Path(__file__).parent/"fixtures"/"samsung-dex-confirm-20261102.xml"
         xml,point=ui.dialog_button(fixture.read_bytes())
         self.assertEqual(point,(746,2206))
-        self.assertIn(b"Start Samsung DeX on <lab>?",xml)
+        self.assertIn(b"Start Samsung DeX on DeX-PC?",xml)
 
     def test_window_listing_without_focus_field_is_refused(self):
         # The real windows query included this app window but no mCurrentFocus.

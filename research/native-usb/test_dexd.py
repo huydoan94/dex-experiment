@@ -54,7 +54,7 @@ class Env:
         self.probe.write_text(FAKE_PROBE)
         self.patches=[patch.object(dexd,"LOGDIR",self.logdir),patch.object(dexd,"RUN",self.run),
                       patch.object(dexd,"PROBE",self.probe),
-                      # Never the real gateway: on backend its port belongs to the running dexd.
+                      # Never the real gateway: on the backend machine its port belongs to the running dexd.
                       patch.object(dexd,"GATEWAY_CONFIG",root/"no-gateway.json"),
                       patch.object(dexd,"check_pins",lambda:None)]  # last: a test stops it
         for p in self.patches:
@@ -362,4 +362,12 @@ class SiteSettingsTests(unittest.TestCase):
         script=(Path(dexd.__file__).parent/"blackscreen/blackscreen.sh").read_text()
         self.assertIn('${serial:+-s "$serial"}',script)
         self.assertNotRegex(script,r"-s [A-Z0-9]{8,}")
+
+    def test_sink_name_and_video_mode_reach_the_session_environment(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"site.json"
+            path.write_text('{"sink_name":"lab-1","video_mode":"720p60","timezone":"UTC"}')
+            settings=dexd.site_settings(path)
+        self.assertEqual(dexd.session_environment(settings),{"DEX_SINK_NAME":"lab-1","DEX_VIDEO_MODE":"720p60"})
+        self.assertEqual(dexd.session_environment({"timezone":"UTC"}),{})
 

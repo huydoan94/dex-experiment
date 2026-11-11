@@ -11,7 +11,7 @@
    "path": "runtime subset of research/native-usb on the backend machine",
    "dexd.py": "5bd8d74629b949bb95f5dcd6b853a140a7e57e893c006f0f615f9df14ab62754",
    "kms_daemon_live.py": "e061b6af4b7c87d1140e04329ae659a8abbba7d83c71cf1eb3169899708bca73",
-   "kms_daemon_probe.py": "f82f59c5b3fcf8452ccb899b2835e9c0460382d3deab9c84a543ba0e1a99f335",
+   "kms_daemon_probe.py": "810bc80692377c2a9a8a0a449f3fcd139fa3fffefe1678e0c5b4505657a47301",
    "direct_gateway.py": "99d3cc48f29e696ebd41b904bc267f6fa35e119835173dfa1ae4a67f071e6777",
    "tcp_control.py": "5b7b82c364fc620a1f937c8c377a12191388649ff52c4359efb77b8fce0080e1",
    "blackscreen/blackscreen.sh": "42f6568251273ac57f671b4bf3b13242a42a8ad5a50d94447bbc9305591df808",

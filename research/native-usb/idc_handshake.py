@@ -58,6 +58,8 @@ def handshake(session, main_connection, key, result, log=lambda **fields: None,
         if after_handshake is not None:
             if main_connection.closed_by_phone:
                 raise ValueError("phone closed main channel before continuation")
+            # The live session sends IDC skin actions (clipboard_bridge) on this connection.
+            session.idc_connection, session.idc_key = connection, key
             after_handshake(session, main_connection, key, result, log)
     except Exception as error:
         first_error = error

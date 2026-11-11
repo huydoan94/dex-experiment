@@ -10,7 +10,7 @@ This repository is the research project. Data is saved in another container.
 
 - **Backend machine** runs the runtime subset of research/native-usb plus
   `dex_probe.py`, the black-screen script and APK, and dexd state. Pins: dexd
-  5bd8d746, kms_daemon_live e061b6af, kms_daemon_probe f82f59c5, direct_gateway
+  5bd8d746, kms_daemon_live e061b6af, kms_daemon_probe 810bc806, direct_gateway
   99d3cc48, blackscreen.sh 42f65682, tcp_control 5b7b82c3 (full list:
   research/native-usb/MANIFEST.sha256). The previous two versions are kept there
   as `before-*` rollbacks. Time zone and phone serial come from a local config file read

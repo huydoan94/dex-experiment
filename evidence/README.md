@@ -8,7 +8,7 @@ How each problem was fixed: [docs/FIXES.md](../docs/FIXES.md). Full history is k
 
 | Part | Identity |
 | --- | --- |
-| Backend on the backend machine | dexd `5bd8d746`, kms_daemon_live `e061b6af`, kms_daemon_probe `f82f59c5`, direct_gateway `99d3cc48` (all files: [MANIFEST.sha256](../research/native-usb/MANIFEST.sha256)); previous two versions kept as rollbacks; time zone and phone serial come from a local config file |
+| Backend on the backend machine | dexd `5bd8d746`, kms_daemon_live `e061b6af`, kms_daemon_probe `810bc806`, direct_gateway `99d3cc48` (all files: [MANIFEST.sha256](../research/native-usb/MANIFEST.sha256)); previous two versions kept as rollbacks; time zone and phone serial come from a local config file |
 | Windows client | v7 (packaged ZIP `7e6f9d9c…66ca`, not in this repository); v8 test adds system keys |
 | Behaviour | async USB in/out, scrambled RTP, pause on disconnect / resume on connect, replug after a session ends, pointer shapes, low-latency video, adaptive audio |
 
