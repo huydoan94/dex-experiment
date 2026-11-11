@@ -118,3 +118,8 @@ each area. Raw measurements are kept outside this repository.
   session, so a reused ID was removed together with its old twin and the drop failed
   ("FILE OPERATION ID DOESN'T EXIST" in the phone log). IDs now continue across
   sessions (`dexd/file-transfer-id`).
+- **2026-11-11 SmartScreen "Windows protected your PC" on client 1.1.0** — from
+  1.0.0 the packages shipped a newly built launcher exe (its version resource
+  changed); unsigned and started from a share, each new exe was unknown to
+  SmartScreen. 1.1.0 ships the launcher every earlier package used, and packages
+  keep it from now on.

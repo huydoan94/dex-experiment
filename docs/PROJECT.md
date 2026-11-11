@@ -36,8 +36,12 @@ Key behaviour in `kms_daemon_live.py`:
   Sink drops are split into `overflow_dropped_*` (real loss) and
   `detach_dropped_*` (queued data discarded when the viewer left).
 
-**Client (`windows/`, WinUI 2.6.5, .NET 10, x64).** FFmpeg H264/AAC, D3D
-presentation, WASAPI 20 ms with an adaptive audio buffer (starts 40 ms, grows on
+**Client (`windows/`, WinUI 2.6.5, .NET 10, x64).** FFmpeg H264/AAC. Video
+rendering (Telemetry panel, per user in `%LOCALAPPDATA%\DexClient\settings.json`,
+from the next connection): Hardware (default) shares one D3D11 device between
+FFmpeg D3D11VA decoding and the presenter's video processor, so frames stay on
+the GPU, and falls back to the CPU when the GPU cannot; Software decodes and
+converts on the CPU. Either way D3D presents (WARP without a GPU). WASAPI 20 ms with an adaptive audio buffer (starts 40 ms, grows on
 underrun up to 160 ms, shrinks after quiet stretches). "Low latency" (default on)
 shows the newest picture at once. Input: ordered bounded queue, hover coalescing,
 release on focus loss. Gateway marks client traffic DSCP 41.
@@ -79,6 +83,10 @@ it. The folder is a share that maps the DOS Archive attribute to the execute bit
 files written by MSBuild lack it and fail with "Access is denied". After a
 build, set Archive on the outputs (`$_.Attributes = $_.Attributes -bor 'Archive'`). The standalone ZIP
 bundles the runtime, `backend.json` and the token (`gateway-token`).
+Keep the launcher `DexClient.App.exe` unchanged between releases (copy only the
+app DLLs, `.pri` and `.xbf`): it is unsigned and runs from a network share, so
+every new exe build makes SmartScreen ask again. The version lives in the app
+DLL (`<Version>` in DexClient.App.csproj); the launcher's own file version stays 1.0.0.0.
 Local gateway regression: `python3 scripts/gateway/test_direct_gateway.py`.
 Docs check: `python3 scripts/session-preflight.py`.
 Pins: after editing a pinned backend file, `python3 scripts/pins.py` refreshes
