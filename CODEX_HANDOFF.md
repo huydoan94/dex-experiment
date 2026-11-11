@@ -1,8 +1,10 @@
-# Handoff: 2026-11-07
+# Handoff: 2026-11-11
 
 ## Status
 
-Everything requested is delivered and accepted; no task is open. Start with
+Project wrapped up 2026-11-11 at the user's request: everything requested is
+delivered and accepted, and no further steps are planned. The Open items below
+stay as known limits, not as pending work. To resume, start with
 AGENTS.md, docs/agents/SESSION_START.md and `python3 scripts/session-preflight.py`.
 This repository is the research project. Data is saved in another container.
 
@@ -49,8 +51,8 @@ evidence/results.json, evidence/checks.log, docs/FIXES.md and MANIFEST.sha256.
   during a large copy. A virtual-file drag did not work and was reverted. Phone
   copy then PC paste not mapped. See docs/FILE_TRANSFER.md.
 - Cleanup 2026-11-11 (PLAN-cleanup.md, untracked): experiments, the Python viewer
-  and dead tests removed; kms_daemon_live and MainWindow.Live split. Step H (review
-  of production modules for inefficiency) not started.
+  and dead tests removed; kms_daemon_live and MainWindow.Live split. Step H measured:
+  streaming costs ~16% of the backend machine's CPU; no efficiency change needed.
 - Resolution: the phone picks; it gives DeX on PC only 1080p30 (720p60 and
   1080p60 refused, 2026-11-10).
 
