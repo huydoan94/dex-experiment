@@ -25,18 +25,19 @@ public sealed partial class MainWindow : Window
         try
         {
             systemKeys = new SystemKeyHook(WinRT.Interop.WindowNative.GetWindowHandle(this),
-                () => SystemKeysButton.IsChecked == true && !syntheticLive && !phoneAcceptance && session.CanSendInput && windowActive,
+                () => !syntheticLive && !phoneAcceptance && session.CanSendInput && windowActive,
                 (scan, extended, down, virtualKey) =>
                 {
                     controls.Enabled = session.CanSendInput && windowActive;
                     Send(controls.Key(scan, extended, down, virtualKey, system: true));
                 });
         }
-        catch (System.ComponentModel.Win32Exception) { SystemKeysButton.IsEnabled = false; } // Keys stay with Windows.
+        catch (System.ComponentModel.Win32Exception) { } // Without the hook these keys stay with Windows.
         Activated += (window, args) =>
         {
             windowActive = args.WindowActivationState != WindowActivationState.Deactivated;
-            if (!windowActive) { Send(controls.ReleaseAll()); controls.Enabled = false; }
+            if (!windowActive) { Send(controls.ReleaseAll()); controls.Enabled = false; AskPhoneClipboard(); }
+            else ShareClipboardWithPhone();
         };
         AppWindow.Closing += (appWindow, args) =>
         {

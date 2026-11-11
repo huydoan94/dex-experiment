@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using DexClient.Core;
 using DexClient.Media;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
 
@@ -133,6 +134,22 @@ public sealed partial class MainWindow
                 {
                     if (session.Generation != generation) return;
                     InputSurface.SetShape(CursorShapes.FromAndroid(type)); cursorChanges++; lastCursorType = type;
+                });
+                clipboard = new ClipboardSync();
+                backend.PhoneClipboardLine += line => DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (session.Generation != generation) return;
+                    if (clipboard.PhoneLine(line) is string text) SetPcClipboard(text);
+                });
+                fileOffer = new FileOffer();
+                backend.FileRequestLine += line => _ = SendFileChunkAsync(line, generation);
+                backend.FileProgressLine += line => DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (session.Generation != generation || fileOffer.Delivered(line) is not { } p) return;
+                    var files = fileOffer.Files;
+                    if (p.Finished) ShowTransfer(files.Count > 1 ? $"Sent {files.Count} files to the phone" : $"Sent {files[0].Name} to the phone", 100, true);
+                    else ShowTransfer($"Sending {files[p.File].Name}" + (files.Count > 1 ? $" ({p.File + 1} of {files.Count})" : ""),
+                                      p.Total > 0 ? 100d * p.Delivered / p.Total : 0, false);
                 });
                 await backend.ConnectAsync(settings!, token);
                 liveBackend = backend;
@@ -297,6 +314,7 @@ public sealed partial class MainWindow
                 liveBackend?.RequestCursorShapes();
                 controls.Enabled = true; ConnectionStatus.Text = audioAvailable ? "Connected" : "Connected — no audio output device";
                 InputSurface.Focus(FocusState.Programmatic);
+                if (windowActive) ShareClipboardWithPhone(); // After the cursor opt-in line.
                 firstPicture?.TrySetResult();
                 if (syntheticLive || phoneAcceptance)
                 {
@@ -373,6 +391,152 @@ public sealed partial class MainWindow
         if (lines.Length != 0 && liveWriter?.Send(lines) == false) liveCancel?.Cancel();
     }
     private void ReleaseFocusedInput() { Send(controls.ReleaseAll()); controls.Enabled = false; }
+    // Clipboard text, the way SamsungDeX.exe shares it: the PC text goes to the phone
+    // when this window becomes active; the phone's text is asked for when it loses focus.
+    private ClipboardSync clipboard = new();
+    private bool ClipboardActive => liveBackend != null
+        && !syntheticLive && !phoneAcceptance && session.CanSendInput;
+    private async void ShareClipboardWithPhone()
+    {
+        if (!ClipboardActive) return;
+        string? text = null;
+        try
+        {
+            if (ClipboardFiles.Files(WinRT.Interop.WindowNative.GetWindowHandle(this)) is { } copied)
+            {
+                if (fileOffer.Offer(FileOffer.Copy, copied, ClipboardFiles.Sequence.ToString()) is string offerLine) Send([offerLine]);
+                return;
+            }
+            var view = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+            if (view.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text)) text = await view.GetTextAsync();
+        }
+        catch (Exception) { return; } // Another program may hold the clipboard; try again next activation.
+        if (ClipboardActive && clipboard.Activated(text) is string line) Send([line]);
+    }
+    private void AskPhoneClipboard() { if (ClipboardActive) Send([ClipboardSync.Request]); }
+    // Files: copied files are offered when this window becomes active; files dropped
+    // on the picture are offered as a drag. The phone pulls them chunk by chunk.
+    private FileOffer fileOffer = new();
+    private static async Task<List<(string Path, string Name, long Size)>> PlainFilesAsync(IReadOnlyList<Windows.Storage.IStorageItem> items)
+    {
+        var files = new List<(string Path, string Name, long Size)>();
+        foreach (var item in items)
+            if (item is Windows.Storage.StorageFile file && !string.IsNullOrEmpty(file.Path))
+                files.Add((file.Path, file.Name, (long)(await file.GetBasicPropertiesAsync()).Size));
+        return files;
+    }
+    private DispatcherQueueTimer? transferHide;
+    // Bottom progress panel for files going to the phone; a finished or failed
+    // transfer stays visible for three seconds.
+    private void ShowTransfer(string text, double? percent, bool final)
+    {
+        TransferText.Text = text;
+        TransferBar.IsIndeterminate = percent == null && !final;
+        TransferBar.Visibility = percent == null && final ? Visibility.Collapsed : Visibility.Visible;
+        if (percent is double value) TransferBar.Value = value;
+        TransferPanel.Visibility = Visibility.Visible;
+        transferHide ??= DispatcherQueue.CreateTimer();
+        transferHide.Stop();
+        if (final)
+        {
+            transferHide.Interval = TimeSpan.FromSeconds(3);
+            transferHide.IsRepeating = false;
+            transferHide.Tick += HideTransfer;
+            transferHide.Start();
+        }
+    }
+    private void HideTransfer(DispatcherQueueTimer timer, object args) { timer.Tick -= HideTransfer; TransferPanel.Visibility = Visibility.Collapsed; }
+    // A file drag from Explorer drives the phone's own drag, as SamsungDeX.exe does:
+    // on entering the picture the files are offered and the phone's drag starts at the
+    // pointer (13); it follows the pointer (9) and drops where the button is released (10).
+    private bool fileDragStarted;
+    private bool fileDragStarting;
+    private long lastFileDragMove;
+    private string? lastFileDragPoint;
+    private string? FileDragPoint(DragEventArgs args)
+    {
+        var point = args.GetPosition(VideoSurface);
+        return controls.FilePointer(point.X, point.Y, VideoSurface.ActualWidth, VideoSurface.ActualHeight);
+    }
+    private async void PictureDragEnter(object sender, DragEventArgs args)
+    {
+        if (!ClipboardActive || fileDragStarted || fileDragStarting
+            || !args.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return;
+        args.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+        var deferral = args.GetDeferral();
+        fileDragStarting = true;
+        try
+        {
+            var at = FileDragPoint(args);
+            var files = await PlainFilesAsync(await args.DataView.GetStorageItemsAsync());
+            if (at != null && ClipboardActive && fileOffer.Offer(FileOffer.Drag, files) is string line)
+            {
+                Send([line, $"M 13 {at}"]);
+                fileDragStarted = true; lastFileDragPoint = at;
+            }
+        }
+        catch (Exception) { } // Items that cannot be read during the drag are not offered.
+        finally { fileDragStarting = false; deferral.Complete(); }
+    }
+    private void PictureDragOver(object sender, DragEventArgs args)
+    {
+        if (!ClipboardActive || !args.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return;
+        args.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+        if (!fileDragStarted || FileDragPoint(args) is not string at || at == lastFileDragPoint) return;
+        long now = Environment.TickCount64;
+        if (now - lastFileDragMove < 33) return; // About 30 moves a second.
+        lastFileDragMove = now; lastFileDragPoint = at;
+        Send([$"M 9 {at}"]);
+    }
+    // Leaving the picture ends the phone's drag without a drop: the backend empties the
+    // phone's file list ("FC"), so the drop that follows becomes a cancel there.
+    private void PictureDragLeave(object sender, DragEventArgs args)
+    {
+        if (!fileDragStarted) return;
+        fileDragStarted = false;
+        if (ClipboardActive && lastFileDragPoint is string at) Send([FileOffer.CancelDrag, $"M 10 {at}"]);
+    }
+    private void PictureDrop(object sender, DragEventArgs args)
+    {
+        if (!fileDragStarted) return;
+        fileDragStarted = false;
+        if (ClipboardActive && (FileDragPoint(args) ?? lastFileDragPoint) is string at) Send([$"M 10 {at}"]);
+    }
+    private async Task SendFileChunkAsync(string request, long generation)
+    {
+        if (!FileOffer.TryParseRequest(request, out int index, out long chunk)) return;
+        string line = FileOffer.ReadFailed;
+        try
+        {
+            var files = fileOffer.Files;
+            if (index < files.Count)
+            {
+                var buffer = new byte[FileOffer.ChunkBytes];
+                await using var stream = new FileStream(files[index].Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1, true);
+                stream.Position = chunk * FileOffer.ChunkBytes;
+                int count = 0, read;
+                while (count < buffer.Length && (read = await stream.ReadAsync(buffer.AsMemory(count))) > 0) count += read;
+                if (count > 0) line = FileOffer.ChunkLine(buffer.AsSpan(0, count));
+                else
+                {
+                    string name = files[index].Name;
+                    DispatcherQueue.TryEnqueue(() => { if (session.Generation == generation) ShowTransfer($"Couldn't send {name}", null, true); });
+                }
+            }
+        }
+        catch (Exception) { DispatcherQueue.TryEnqueue(() => ShowTransfer("Couldn't read the file to send", null, true)); }
+        DispatcherQueue.TryEnqueue(() => { if (session.Generation == generation) Send([line]); });
+    }
+    private void SetPcClipboard(string text)
+    {
+        try
+        {
+            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            package.SetText(text);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+        }
+        catch (Exception) { } // Clipboard busy: the next phone copy is offered again on the next focus change.
+    }
     private void BackendLostFocus(object sender, RoutedEventArgs args) => ReleaseFocusedInput();
     private void BackendKeyDown(object sender, KeyRoutedEventArgs args)
     {

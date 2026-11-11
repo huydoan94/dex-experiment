@@ -67,6 +67,12 @@ public sealed class DesktopInput
         pendingMove = $"M 0 {x} {y}";
         return FlushMove();
     }
+    // "x y" in the phone's input space for a file drag/drop point, or null when off the picture.
+    public string? FilePointer(double px, double py, double width, double height)
+    {
+        if (!double.IsFinite(px) || !double.IsFinite(py) || width <= 0 || height <= 0 || px < 0 || py < 0 || px >= width || py >= height) return null;
+        return $"{Math.Clamp((int)(px * 1920 / width), 0, 1919)} {Math.Clamp((int)(py * 1080 / height), 0, 1079)}";
+    }
     public string[] Button(int button, bool down)
     {
         if (!Enabled || !codes.TryGetValue(button, out var pair)) return [];
