@@ -116,6 +116,8 @@ def main(argv=None):
             session.descrambler=daemon.Descrambler(client.codec()._key)
         cap.capabilities(session,connection,client,result,clock,log)
         pss_probe.pss_ready(session,connection,client,result,clock,log)
+        # Clipboard (clipboard_bridge) sends and reads on the main channel later.
+        session.main_connection,session.main_codec=connection,client.codec()
         def confirm(s,main,r,logger,deadline):
             ui_confirm.confirm(s,main,r,logger,min(deadline,absolute_ui_deadline),
                                a.output,a.bus)

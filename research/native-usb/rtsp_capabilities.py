@@ -12,6 +12,7 @@ import idc_handshake
 import pss_probe
 import rtsp
 import rtsp_hello
+import site_env
 import wfd_startup as wfd
 from loopback_transfer import TransferSession
 from tunnel_probe import emit
@@ -19,7 +20,8 @@ from usb_tunnel import TunnelError
 
 # Declared diagnostic profile, not proof of a working media decoder.
 PROFILE = {
-    "wfd_video_formats": "38 00 02 04 00000081 00000000 00000000 00 0000 0000 00 none none",
+    # Default 1080p30 (CEA bits 0 and 7); site_env "all" offers SamsungDeX.exe's full list.
+    "wfd_video_formats": site_env.video_formats(),
     "wfd_audio_codecs": "none",
     "wfd_client_rtp_ports": "RTP/AVP/TCP;interleaved mode=play",
     "wfd_content_protection": "none",
@@ -81,7 +83,7 @@ def selection_compatible(values, profile=PROFILE):
     return (len(presentation)==2 and presentation[0].startswith("rtsp://")
             and presentation[1]=="none"
             and all(int(tokens[i],16)==0 for i in (1,7,8,9,10))
-            and video_profile==2 and level==4 and cea in (1,128) and vesa==0 and hh==0
+            and video_profile==2 and level==4 and site_env.picked(cea,vesa,hh) is not None
             and values.get("wfd_audio_codecs","none")=="none"
             and values.get("wfd_content_protection","none")=="none"
             and values.get("wfd_uibc_capability","none")=="none"
@@ -120,6 +122,13 @@ def exchange(session,main,connection,result,log,after_selection=None,profile=PRO
             result["rtsp_selection_compatible"]=selection_compatible(values,profile)
             if not result["rtsp_selection_compatible"]:
                 raise ValueError("source selected parameters outside declared profile")
+            # The phone picks the format; input scaling follows its pick.
+            tokens=values["wfd_video_formats"].split()
+            table,width,height,fps=site_env.picked(*(int(t,16) for t in tokens[4:7]))
+            site_env.select(width,height)
+            result["rtsp_selected_video"]=dict(table=table,width=width,height=height,fps=fps,
+                                              offered=site_env.video_mode())
+            log(event="rtsp_video_selected",**result["rtsp_selected_video"])
             if len(connection.received)!=offset+size:
                 raise ValueError("unexpected trailing M4 data")
             guard()

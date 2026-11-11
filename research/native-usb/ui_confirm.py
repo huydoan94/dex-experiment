@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import re
 import selectors
+import site_env
 import signal
 import subprocess
 import time
@@ -11,7 +12,7 @@ import xml.etree.ElementTree as ET
 from usb_tunnel import TunnelError
 
 PACKAGE="com.sec.android.app.dexonpc"
-TITLE="Start Samsung DeX on <lab>?"
+TITLE="Start Samsung DeX on %s?"%site_env.sink_name()
 MAX_XML_BYTES=262144
 ADB=["/usr/bin/adb","-H","127.0.0.1","-P","5037"]
 

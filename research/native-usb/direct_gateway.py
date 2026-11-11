@@ -31,6 +31,10 @@ DSCP = 41
 # session writes 'C <MOUSE_CURSOR_ID> <0|1 night>' lines to cursor.fifo.
 CURSOR_OPT_IN = b'X cursor\n'
 CURSOR_LINE_BYTES = 16
+# The same return path carries the phone's clipboard text as one 'V <base64>' line
+# (clipboard_bridge; at most 131072 characters of UTF-8).
+CLIP_LINE_BYTES = 2 + 4*((4*131072+2)//3)
+BASE64 = frozenset(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
 
 
 def response(sock, status):
@@ -55,7 +59,7 @@ class Pair:
         self.worker = None
         self.created = time.monotonic()
         self.reason = None
-        self.counts = {'media_bytes': 0, 'input_bytes': 0, 'cursor_lines': 0, 'cursor_dropped': 0}
+        self.counts = {'media_bytes': 0, 'input_bytes': 0, 'cursor_lines': 0, 'cursor_dropped': 0, 'clipboard_lines': 0, 'file_requests': 0, 'file_progress': 0}
 
     def attach(self, role, sock):
         with self.lock:
@@ -185,7 +189,8 @@ class Pair:
         """Complete, well-formed cursor lines from the session; anything else is dropped."""
         self.cursor_buffer += data
         *lines, rest = self.cursor_buffer.split(b'\n')
-        self.cursor_buffer = bytearray(rest[-CURSOR_LINE_BYTES:])
+        limit = CLIP_LINE_BYTES if rest.startswith(b'V ') else CURSOR_LINE_BYTES
+        self.cursor_buffer = bytearray(rest[-limit:])
         kept = []
         for line in lines:
             parts = line.split(b' ')
@@ -193,6 +198,19 @@ class Pair:
                     and parts[2] in (b'0', b'1')):
                 kept.append(line+b'\n')
                 self.counts['cursor_lines'] += 1
+            elif len(parts) == 2 and parts[0] == b'V' and len(line) <= CLIP_LINE_BYTES and BASE64.issuperset(parts[1]):
+                kept.append(line+b'\n')
+                self.counts['clipboard_lines'] += 1
+            elif (len(parts) == 3 and parts[0] == b'G' and parts[1].isdigit() and parts[2].isdigit()
+                    and len(parts[1]) <= 4 and len(parts[2]) <= 9):
+                # file_bridge asks the viewer for the next chunk of a file.
+                kept.append(line+b'\n')
+                self.counts['file_requests'] += 1
+            elif (len(parts) == 4 and parts[0] == b'S' and all(p.isdigit() for p in parts[1:])
+                    and len(parts[1]) <= 4 and len(parts[2]) <= 15 and parts[3] in (b'0', b'1')):
+                # file_bridge reports bytes of a file the phone has accepted.
+                kept.append(line+b'\n')
+                self.counts['file_progress'] += 1
             else:
                 self.counts['cursor_dropped'] += 1
         return b''.join(kept)
@@ -211,7 +229,7 @@ class Pair:
                     cursor_fd = fifo(self.server.run_dir/'cursor.fifo', os.O_RDONLY)
                 if cursor_fd is not None:
                     try:
-                        lines = self.cursor_lines(os.read(cursor_fd, 512))
+                        lines = self.cursor_lines(os.read(cursor_fd, 65536))
                     except BlockingIOError:
                         lines = b''
                     if lines:

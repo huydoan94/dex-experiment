@@ -9,16 +9,24 @@ Extends run 72 (kms_input_live, unchanged) with:
 Keys and buttons that may still be down when the media window ends are released
 once. Saved results hold counts only, never coordinates or key codes.
 """
+import base64
 from collections import Counter
+import errno
+import json
+import os
 import re
 
 import kms_input_live as base
+import site_env
 import sidesync_packets
 from usb_tunnel import TunnelError
 
 PRESS={**base.PRESS,6:5,15:14,17:16}  # press event -> its release event
 PRESS_OF={release:press for press,release in PRESS.items()}
-MOUSE_EVENTS=frozenset((base.MOVE,*PRESS,*PRESS_OF,*base.SCROLL))
+# File drag (e2/h onReceiveMouseEvent): 13 starts the phone's drag of the offered files,
+# 9 moves it, 10 drops it at x,y (file_bridge, docs/FILE_TRANSFER.md).
+FILE_DRAG=frozenset((13,9,10))
+MOUSE_EVENTS=frozenset((base.MOVE,*PRESS,*PRESS_OF,*base.SCROLL,*FILE_DRAG))
 KEY=re.compile(rb"K ([du]) ([0-9]{1,3})")
 # Latency: the media window reads input once per slice (run 72: 0.05 s, ~25 ms average).
 SESSION_SLICE_SECONDS=.01
@@ -64,14 +72,95 @@ def packet(event):
     return sidesync_packets.mouse_event(*event)
 
 
+# Clipboard lines (clipboard_bridge): "P <base64 UTF-8>" sets the phone's clipboard,
+# "R" asks for it. Only a "P " line may be longer than the input line limit.
+CLIPBOARD_SET=re.compile(rb"P ([A-Za-z0-9+/=]{0,%d})"%(4*((4*131072+2)//3)))
+MAX_CLIPBOARD_LINE=2+4*((4*131072+2)//3)
+# File lines (file_bridge): "FO <0|1> <base64 JSON [[name,size],..]>" offers copied (0) or
+# dropped (1) files; "B <base64>" is one requested chunk (at most 49152 bytes); "BX"
+# reports that the viewer could not read the file.
+FILE_OFFER=re.compile(rb"FO ([01]) ([A-Za-z0-9+/=]{4,%d})"%(MAX_CLIPBOARD_LINE))
+MAX_CHUNK_LINE=2+4*((49152+2)//3)
+FILE_CHUNK=re.compile(rb"B ([A-Za-z0-9+/=]{4,%d})"%(MAX_CHUNK_LINE-2))
+LONG_LINES={b"P ":MAX_CLIPBOARD_LINE,b"FO":MAX_CLIPBOARD_LINE,b"B ":MAX_CHUNK_LINE}
+READ_BYTES=65536
+SIDE_EVENTS=("P","R","FO","B","BX","FC")
+
+
 class InputReader(base.InputReader):
-    """Mouse events as (event,x,y); keys as ("K",KEY_DOWN|KEY_UP,code)."""
+    """Mouse events as (event,x,y); keys as ("K",KEY_DOWN|KEY_UP,code); clipboard
+    lines as ("P",text) or ("R",)."""
+    def events(self):
+        # kms_input_live's reader with one change: a line that starts "P " may grow to
+        # MAX_CLIPBOARD_LINE before it counts as overlong.
+        try:
+            data=os.read(self.fd,READ_BYTES)
+        except OSError as error:
+            if error.errno not in (errno.EAGAIN,errno.EWOULDBLOCK):
+                raise
+            data=b""
+        self.buffer+=data
+        *lines,rest=self.buffer.split(b"\n")
+        if self.discarding:
+            if lines:
+                lines=lines[1:]
+                self.discarding=False
+            else:
+                rest=b""
+        limit=LONG_LINES.get(bytes(rest[:2]),base.MAX_LINE_BYTES)
+        if len(rest)>limit:
+            self.counts["invalid"]+=1
+            rest=b""
+            self.discarding=True
+        self.buffer=bytearray(rest)
+        events=[]
+        for line in lines:
+            event=self.parse(line)
+            if event is None:
+                self.counts["invalid"]+=1
+            else:
+                events.append(event)
+        return events
+
     @staticmethod
     def parse(line):
+        if line==b"R":
+            return ("R",)
+        if line==b"BX":
+            return ("BX",)
+        if line==b"FC":
+            return ("FC",)
+        if line.startswith(b"B "):
+            match=FILE_CHUNK.fullmatch(line)
+            try:
+                return ("B",base64.b64decode(match[1],validate=True)) if match else None
+            except ValueError:
+                return None
+        if line.startswith(b"FO "):
+            match=FILE_OFFER.fullmatch(line)
+            try:
+                files=json.loads(base64.b64decode(match[2],validate=True)) if match else None
+            except ValueError:
+                return None
+            if (not isinstance(files,list) or not files or any(
+                    not isinstance(f,list) or len(f)!=2 or not isinstance(f[0],str) or not f[0]
+                    or "/" in f[0] or "\\" in f[0] or type(f[1]) is not int or f[1]<0 for f in files)):
+                return None
+            return ("FO",int(match[1]),[(name,size) for name,size in files])
+        if line.startswith(b"P "):
+            match=CLIPBOARD_SET.fullmatch(line)
+            if not match:
+                return None
+            try:
+                text=base64.b64decode(match[1],validate=True).decode("utf-8")
+            except ValueError:
+                return None
+            return ("P",text)
         match=base.LINE.fullmatch(line)
         if match:
             event,x,y=int(match[1]),int(match[2]),int(match[3])
-            return (event,x,y) if event in MOUSE_EVENTS and x<base.WIDTH and y<base.HEIGHT else None
+            # Viewer space is 1920x1080; the phone takes DeX desktop pixels (site_env video mode).
+            return (event,*site_env.to_desktop(x,y)) if event in MOUSE_EVENTS and x<base.WIDTH and y<base.HEIGHT else None
         match=KEY.fullmatch(line)
         if match:
             code=int(match[2])
@@ -103,8 +192,17 @@ class SessionInput(base.InputSession):
             self._release_held()
             self.input.close()
 
+    def _clipboard(self,events):
+        """Clipboard lines; a session without a clipboard bridge drops them."""
+        self.dropped["clipboard"]+=len(events)
+
     def _pump_input(self):
-        self.pending=trim(base.coalesce(self.pending+self.input.events(),self.input.counts),
+        events=self.input.events()
+        clipboard=[event for event in events if event[0] in SIDE_EVENTS]
+        if clipboard:
+            events=[event for event in events if event[0] not in SIDE_EVENTS]
+            self._clipboard(clipboard)
+        self.pending=trim(base.coalesce(self.pending+events,self.input.counts),
                           base.MAX_PENDING_EVENTS,self.dropped)
         if not self.pending:
             return
@@ -118,6 +216,10 @@ class SessionInput(base.InputSession):
             return
         batch=self.pending[:base.MAX_EVENTS_PER_SEND]
         self.pending=self.pending[base.MAX_EVENTS_PER_SEND:]
+        log=getattr(self,"log",None)
+        for event in batch:
+            if event[0] in FILE_DRAG and log is not None:
+                log("file_drag_event",code=event[0])
         self.input_sends+=1
         # Anything pressed may reach the phone even if the send then fails: hold it first.
         # The state after a successful send replays the batch in order.

@@ -6,12 +6,12 @@ from pathlib import Path
 import sys
 
 EXPECTED = {
-    "rtsp_capabilities.py": "7df72d5a5cd16a9f8e9995f38e5950bec934f4b62eeec3034760147d77521ebb",
+    "rtsp_capabilities.py": "751c6ecd628906a257e27680efc3737a46d32db37e3cdeac5d641edcc169a12d",
     'rtsp_hello.py': '0af2962ffdd5458ddf1121a74f70a47b44660c71b94325c3339f00b7a6ea63f8',
     'rtsp.py': 'b4ae5bb775b5aa908787ad0b8fef3ed35c6e7270c831872b1507a68972d830c0',
     "wfd_startup.py": "bb03b53d7761ff06ae1d3ebf475c2d10dabdc5a536500b414a89dc6614c2311c",
-    "idc_handshake.py": "c188c4884e6a73428504a3b7045584aa04a2acef39158a0903343e40a573a5ca",
-    "idc.py": "a36d6974c787944c093290a5e929a5ac9bdb39ee8f52030cbc05006389590557",
+    "idc_handshake.py": "6560f0896ffd2e8f81c1a47f02623a67d7496846412aad24c0fd7e6c420c84db",
+    "idc.py": "b42bc257c1f8045682636b731a990754048ea954225ccbbbe6dcd8d339e6c2d6",
     "usb_tunnel.py": "c21fc066271ff90da51d710f0484136a8707be812f75c0f0f4244ef0d8a7367b",
     "tcp_control.py": "5b7b82c364fc620a1f937c8c377a12191388649ff52c4359efb77b8fce0080e1",
     "idc_capture.py": "b73f0438dfd4a88310dd1e122b4ba4f9584e085af9a71d878d5f37dc2676cfd8",

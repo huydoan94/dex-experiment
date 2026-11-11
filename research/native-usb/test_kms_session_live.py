@@ -59,11 +59,12 @@ class Tests(unittest.TestCase):
         self.assertEqual(ks.key_packet(ks.KEY_UP,0x2ff),bytes.fromhex("03 15 00 0b 00 01 00 ff 02 00 00"))
 
     def test_parse_accepts_keys_and_every_mapped_mouse_event(self):
-        for event in (0,1,2,3,4,5,6,7,8,11,12,14,15,16,17):
+        # 9, 10 and 13 are the file drag move/drop/start (file_bridge).
+        for event in (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17):
             self.assertEqual(ks.InputReader.parse(b"M %d 1 2"%event),(event,1,2))
         self.assertEqual(ks.InputReader.parse(b"K d 30"),("K",0,30))
         self.assertEqual(ks.InputReader.parse(b"K u 767"),("K",1,767))
-        for line in (b"M 9 1 1",b"M 10 1 1",b"M 13 1 1",b"M 18 1 1",b"K d 0",b"K d 768",
+        for line in (b"M 18 1 1",b"K d 0",b"K d 768",
                      b"K x 30",b"K d 30 ",b"K d -1",b"M 0 1920 0"):
             self.assertIsNone(ks.InputReader.parse(line),line)
 

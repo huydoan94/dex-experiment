@@ -6,6 +6,7 @@ import signal
 import time
 
 import auth_probe
+import site_env
 from main_channel import Frame, FrameDecoder, ProtocolError, encode_frame
 
 MAX_REQUESTS = 10
@@ -15,7 +16,7 @@ MAX_CAPABILITY_BYTES = 8192
 # Windows-compatible DeX protocol profile; the implementation runs on Linux.
 PROFILE = {
     "SinkMAC": "02:00:00:00:00:01",
-    "SinkName": "<lab>",
+    "SinkName": site_env.sink_name(),
     "SinkIP": "127.0.0.1",
     "KmsVer": "",
     "SinkType": "Windows",

@@ -142,6 +142,51 @@ class GatewayTests(unittest.TestCase):
             finally:os.close(cursor_fd)
             self.until(lambda:self.server.active.counts['cursor_lines']==3 and self.server.active.counts['cursor_dropped']==2)
         finally:os.close(input_fd)
+    def test_clipboard_lines_pass_both_ways_and_bad_ones_are_dropped(self):
+        input_client,media_client=self.pair()
+        input_fd=os.open(self.root/'input.fifo',os.O_RDONLY|os.O_NONBLOCK)
+        try:
+            text=base64.b64encode(os.urandom(60000))
+            input_client.sendall(b'X cursor\nP '+text+b'\nR\n')
+            got=b''
+            deadline=time.monotonic()+5
+            while not got.endswith(b'R\n') and time.monotonic()<deadline:
+                try:got+=os.read(input_fd,1<<20)
+                except BlockingIOError:time.sleep(.01)
+            self.assertEqual(got,b'P '+text+b'\nR\n')
+            cursor_fd=self.cursor_writer()
+            try:
+                clip=b'V '+base64.b64encode(os.urandom(150000))
+                os.write(cursor_fd,b'V not*base64\n')
+                def write_all(view=memoryview(clip+b'\nC 1002 0\n')):
+                    while view:
+                        try:view=view[os.write(cursor_fd,view[:65536]):]
+                        except BlockingIOError:time.sleep(.005)
+                writer=threading.Thread(target=write_all,daemon=True);writer.start()
+                data=b''
+                input_client.settimeout(5)
+                while data.count(b'\n')<2:data+=input_client.recv(1<<16)
+                writer.join(5)
+                self.assertEqual(data,clip+b'\nC 1002 0\n')
+            finally:os.close(cursor_fd)
+            self.until(lambda:self.server.active.counts['clipboard_lines']==1 and self.server.active.counts['cursor_dropped']==1)
+        finally:os.close(input_fd)
+    def test_file_chunk_requests_reach_the_client(self):
+        input_client,media_client=self.pair()
+        input_fd=os.open(self.root/'input.fifo',os.O_RDONLY|os.O_NONBLOCK)
+        try:
+            input_client.sendall(b'X cursor\nM 0 1 2\n')
+            self.fifo_bytes(input_fd,b'M 0 1 2\n')
+            cursor_fd=self.cursor_writer()
+            try:
+                os.write(cursor_fd,b'G 12345 1\nG 3 x\nS 0 49152 0\nS 0 5 2\nG 0 7\n')
+                data=b''
+                input_client.settimeout(5)
+                while data.count(b'\n')<2:data+=input_client.recv(64)
+                self.assertEqual(data,b'S 0 49152 0\nG 0 7\n')
+            finally:os.close(cursor_fd)
+            self.until(lambda:self.server.active.counts['file_requests']==1 and self.server.active.counts['file_progress']==1 and self.server.active.counts['cursor_dropped']==3)
+        finally:os.close(input_fd)
     def test_opt_in_before_the_daemon_reads_input_does_not_stall_the_session(self):
         # 2026-11-06 v7 session A: an older gateway ended a session whose early opt-in
         # could not drain into a not-yet-read input FIFO. The opt-in never enters the FIFO.
