@@ -24,7 +24,7 @@
    "rollbacks": "before-*-20261110 and before-*-20261111 on the backend machine",
    "site_settings": "time zone, phone serial and sink name from a local config file; optional video_mode (1080p30 default, all, 1080p60)",
    "clipboard_bridge.py": "4471c768f0210c092244430aeb412a834d85b9b80e2bdc086b6adb8e870e3225",
-   "file_bridge.py": "1afc3615e7aedeb34689743183a2d73e9797dad07f247d29760206c4c880cba2",
+   "file_bridge.py": "8571a4bc95f7d1c429145f0e690b5915fdd53a03c19311aa0ba27ee4658f5987",
    "idc_handshake.py": "6560f0896ffd2e8f81c1a47f02623a67d7496846412aad24c0fd7e6c420c84db"
   }
  },

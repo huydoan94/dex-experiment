@@ -7,6 +7,7 @@ import unittest
 
 import file_bridge as fb
 import kms_daemon_live as daemon
+import cursor_relay
 import kms_session_live as session
 
 
@@ -152,7 +153,7 @@ class ReaderTests(unittest.TestCase):
 
 class RelayTests(unittest.TestCase):
     def test_relay_collects_init_responses_and_queues_requests(self):
-        relay = daemon.CursorRelay("/nonexistent")
+        relay = cursor_relay.CursorRelay("/nonexistent")
         body = json.dumps({"TYPE": "RESP", "MSG": "InitFileTransfer", "RESULT": True}).encode()
         wire = (struct.pack(">BBH", 3, 0x67, 20) + struct.pack(">IQI", 1, len(body), 0)
                 + struct.pack(">BBH", 3, 0x68, 4 + len(body)) + body + struct.pack(">BBH", 3, 0x69, 4))
@@ -175,6 +176,35 @@ class SessionTests(unittest.TestCase):
         s.files = Bridge()
         s._files([("FO", 0, [("a", 1)]), ("B", b"z"), ("BX",)])
         self.assertEqual(seen, [("FO", 0, [("a", 1)]), ("failed", "send: usb gone"), ("failed", "viewer")])
+
+
+class TransferIdTests(unittest.TestCase):
+    def test_ids_continue_from_the_saved_one_and_wrap(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "file-transfer-id"
+            self.assertEqual(fb.saved_transfer_id(path), 0)            # nothing saved yet
+            sent = []
+            bridge = fb.FileBridge(sent.append, lambda names: None, lambda: None, lambda c, d: None,
+                                   lambda i, c: None, transfer_id=fb.saved_transfer_id(path),
+                                   remember=lambda i: fb.save_transfer_id(path, i))
+            bridge.offer(fb.DRAG, [("a", 1)])
+            bridge.cancel_drag()
+            self.assertEqual((bridge.transfer_id, fb.saved_transfer_id(path)), (2, 2))
+            again = fb.FileBridge(sent.append, lambda names: None, lambda: None, lambda c, d: None,
+                                  lambda i, c: None, transfer_id=fb.saved_transfer_id(path))
+            again.offer(fb.DRAG, [("b", 1)])
+            self.assertEqual(again.transfer_id, 3)                     # the next session continues
+            fb.save_transfer_id(path, fb.MAX_TRANSFER_ID)
+            last = fb.FileBridge(sent.append, lambda names: None, lambda: None, lambda c, d: None,
+                                 lambda i, c: None, transfer_id=fb.saved_transfer_id(path))
+            last.offer(fb.DRAG, [("c", 1)])
+            self.assertEqual(last.transfer_id, 1)                      # wraps like before
+            path.write_text("junk")
+            self.assertEqual(fb.saved_transfer_id(path), 0)
+            fb.save_transfer_id(None, 5)                               # no state folder: no-op
+            self.assertFalse((Path(d) / "file-transfer-id.new").exists())
 
 
 if __name__ == "__main__":

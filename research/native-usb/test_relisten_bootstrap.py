@@ -13,6 +13,7 @@ def saved(name):
     return json.loads((D / (name + ".json")).read_text())["stdout"]
 
 
+@unittest.skipUnless(D.is_dir(), "saved capture is kept outside the repository")
 class Tests(unittest.TestCase):
     def setUp(self):
         self.service = saved("service-before")

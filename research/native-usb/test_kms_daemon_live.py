@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 import kms_daemon_live as daemon
+import daemon_sink
 import kms_daemon_probe as probe
 import kms_input_live
 import kms_session_live as ks
@@ -85,7 +86,7 @@ class Tests(unittest.TestCase):
             path=Path(d)/"ts.fifo"
             os.mkfifo(path,0o600)
             notes=[]
-            sink=daemon.DetachableSink(path,notify=notes.append,poll_seconds=.05).start()
+            sink=daemon_sink.DetachableSink(path,notify=notes.append,poll_seconds=.05).start()
             try:
                 sink.put(b"x"*188)
                 self.assertEqual(sink.summary()["idle_dropped_bytes"],188)
@@ -109,7 +110,7 @@ class Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"ts.fifo"
             path.write_bytes(b"")
-            sink=daemon.DetachableSink(path,poll_seconds=.05).start()
+            sink=daemon_sink.DetachableSink(path,poll_seconds=.05).start()
             wait_for(lambda:sink.error is not None)
             sink.put(b"x"*188)
             sink.close()
@@ -120,7 +121,7 @@ class Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"ts.fifo"
             os.mkfifo(path,0o600)
-            sink=daemon.DetachableSink(path,poll_seconds=.05).start()
+            sink=daemon_sink.DetachableSink(path,poll_seconds=.05).start()
             try:
                 time.sleep(.2)
                 self.assertEqual(sink.unattached_seconds(),0)
@@ -140,7 +141,7 @@ class Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"ts.fifo"
             os.mkfifo(path,0o600)
-            sink=daemon.DetachableSink(path,poll_seconds=5).start()
+            sink=daemon_sink.DetachableSink(path,poll_seconds=5).start()
             started=time.monotonic()
             sink.close()
             self.assertLess(time.monotonic()-started,1)

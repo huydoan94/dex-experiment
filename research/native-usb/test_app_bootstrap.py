@@ -10,6 +10,8 @@ from unittest.mock import patch
 import app_bootstrap as b
 from test_version_query import Device as VersionDevice, Util
 
+SAVED = (Path(__file__).resolve().parent / "app-state-20261101T195355Z").is_dir()
+
 SERVICE = """SERVICE com.sec.android.app.dexonpc/.service.DOPService abc pid=123 user=0
   mPackageVersion = 2.5.00.16
   mDOPServiceRunning = true
@@ -82,6 +84,7 @@ class Tests(unittest.TestCase):
              self.assertRaises(FileExistsError):
             b.main(["--phone-bootstrap-approved", "--retain-started-service", "--output", folder])
 
+    @unittest.skipUnless(SAVED, "saved capture is kept outside the repository")
     def test_actual_saved_baseline_parses_offline(self):
         root=Path(__file__).parent/"app-state-20261101T195355Z"
         service=json.loads((root/"dex-service.json").read_text())["stdout"]

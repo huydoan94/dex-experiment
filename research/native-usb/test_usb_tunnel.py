@@ -12,6 +12,8 @@ import unittest
 from conn_frames import Decoder, Frame, encode
 from usb_tunnel import Session, TunnelError
 
+SAVED_CAPTURES = (Path(__file__).resolve().parent / "query-20261101T171251Z").is_dir() and (Path(__file__).resolve().parent / "bootstrap-20261101T201318Z").is_dir()
+
 UID = b'host-service' + bytes(52)
 SAVED = Path(__file__).with_name('query-20261101T171251Z')
 TICK_S = 0.05
@@ -418,6 +420,7 @@ class SessionTests(unittest.TestCase):
         self.assertLessEqual(max(long.read_timeouts_ms), 1000)
 
     # Review finding 5: the captured app-start notification ends a session.
+    @unittest.skipUnless(SAVED_CAPTURES, "saved capture is kept outside the repository")
     def test_saved_notification_mid_session_stops(self):
         phone = FakePhone(usb_buffer_bytes=512)
         s = self.opened(phone)
@@ -500,6 +503,7 @@ class SessionTests(unittest.TestCase):
             s.connect(40000)
         self.assertEqual((s.connections, s.retired), ({}, {}))
 
+    @unittest.skipUnless(SAVED_CAPTURES, "saved capture is kept outside the repository")
     def test_replays_saved_s20_version(self):
         request = (SAVED / 'request.bin').read_bytes()
         response = (SAVED / 'response.bin').read_bytes()

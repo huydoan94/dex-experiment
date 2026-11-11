@@ -8,6 +8,9 @@ from unittest.mock import patch
 from conn_frames import Frame,PAD_BYTE,encode
 import conn_transfer
 import kms_daemon_live as daemon
+import cursor_relay
+import daemon_sink
+import usb_engines
 import rtsp_udp_play as play
 import tcp_control as tcp
 from tunnel_probe import Link
@@ -143,7 +146,7 @@ class FakeUsb:
 
 class TimingTests(unittest.TestCase):
     def test_reads_writes_and_fifo_backlog_are_timed_without_payload(self):
-        timing=daemon.UsbTiming(FakeUsb([b"a"*512,b"",b"b"*100]))
+        timing=usb_engines.UsbTiming(FakeUsb([b"a"*512,b"",b"b"*100]))
         self.assertEqual(timing.get_active_configuration(),"config")
         self.assertEqual(bytes(timing.read(133,512)),b"a"*512)
         self.assertEqual(len(timing.read(133,512)),0)
@@ -168,7 +171,7 @@ class TimingTests(unittest.TestCase):
         class Slow(FakeUsb):
             def write(self,endpoint,data,timeout=None):
                 gate.wait(2);return super().write(endpoint,data,timeout)
-        device=Slow([]);timing=daemon.UsbTiming(device)
+        device=Slow([]);timing=usb_engines.UsbTiming(device)
         started=clock.monotonic()
         for size in (32,512,0,24):self.assertEqual(timing.write(3,b"x"*size,1000),size)
         self.assertLess(clock.monotonic()-started,.5)
@@ -181,7 +184,7 @@ class TimingTests(unittest.TestCase):
     def test_failed_write_surfaces_on_next_read_and_write(self):
         class Broken(FakeUsb):
             def write(self,endpoint,data,timeout=None):raise OSError("pipe")
-        timing=daemon.UsbTiming(Broken([b"r"]))
+        timing=usb_engines.UsbTiming(Broken([b"r"]))
         timing.write(3,b"x")
         timing.writer.join(2)
         with self.assertRaisesRegex(Exception,"pipelined USB write failed: OSError"):timing.read(133,512)
@@ -193,7 +196,7 @@ class TimingTests(unittest.TestCase):
         never=threading.Event()
         class Stuck(FakeUsb):
             def write(self,endpoint,data,timeout=None):never.wait(5);return len(data)
-        timing=daemon.UsbTiming(Stuck([]));timing.write(3,b"x")
+        timing=usb_engines.UsbTiming(Stuck([]));timing.write(3,b"x")
         with self.assertRaisesRegex(Exception,"USB writer did not stop"):timing.stop_writer(.2)
         owner=daemon.DaemonOwner.__new__(daemon.DaemonOwner)
         owner.current=SimpleNamespace(usb_timing=timing);owner.quiesced=False;owner.quiesce_error=None;owner.reader=None
@@ -206,7 +209,7 @@ class TimingTests(unittest.TestCase):
 
     def test_owner_drains_writer_before_reader_stop(self):
         order=[]
-        timing=daemon.UsbTiming(FakeUsb([]))
+        timing=usb_engines.UsbTiming(FakeUsb([]))
         timing.write(3,b"x")
         stop=timing.stop_writer
         timing.stop_writer=lambda *a:(order.append("writer"),stop(*a))
@@ -218,18 +221,18 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(order,["writer","reader","release"])
 
     def test_cap_bounds_memory_and_keeps_pairs_aligned(self):
-        timing=daemon.UsbTiming(FakeUsb([b"z"]*5),cap=3)
+        timing=usb_engines.UsbTiming(FakeUsb([b"z"]*5),cap=3)
         for _ in range(5):timing.read(133,512);timing.mark_consumed()
         self.assertEqual((len(timing.read_end),len(timing.consumed)),(3,3))
         self.assertTrue(timing.summary()["capped"])
 
     def test_empty_summary(self):
-        summary=daemon.UsbTiming(FakeUsb([])).summary()
+        summary=usb_engines.UsbTiming(FakeUsb([])).summary()
         self.assertEqual((summary["reads"],summary["backlog_wait_us"],summary["write_us"]),(0,{},{}))
 
     def test_peak_window(self):
-        self.assertEqual(daemon._peak_window_bytes([0,50,100,250],[1,2,4,8],100),8)
-        self.assertEqual(daemon._peak_window_bytes([0,50,100,101],[1,2,4,8],100),14)
+        self.assertEqual(usb_engines._peak_window_bytes([0,50,100,250],[1,2,4,8],100),8)
+        self.assertEqual(usb_engines._peak_window_bytes([0,50,100,101],[1,2,4,8],100),14)
 
 
 class FakeEngine:
@@ -245,7 +248,7 @@ class FakeEngine:
 
 class AsyncInTests(unittest.TestCase):
     def test_completions_split_in_order_like_512_byte_reads(self):
-        engine=FakeEngine();reader=daemon.AsyncIn(engine,TimeoutError,transfers=3,transfer_bytes=16384)
+        engine=FakeEngine();reader=usb_engines.AsyncIn(engine,TimeoutError,transfers=3,transfer_bytes=16384)
         self.assertEqual((engine.started,reader.inflight),((3,16384),3))
         transfer=sized(1384,1)+sized(1008,2)+sized(1384,3)+bytes([PAD_BYTE])
         long_transfer=bytes(range(256))*80   # 20480 bytes: one 16384 completion then 4096
@@ -262,19 +265,19 @@ class AsyncInTests(unittest.TestCase):
         with self.assertRaises(TimeoutError):reader.read(512,10)
 
     def test_failure_status_stops_resubmitting_and_raises_after_data(self):
-        reader=daemon.AsyncIn(FakeEngine(),TimeoutError,transfers=2,transfer_bytes=1024)
+        reader=usb_engines.AsyncIn(FakeEngine(),TimeoutError,transfers=2,transfer_bytes=1024)
         self.assertFalse(reader.complete(0,5,b"tail"))
         self.assertEqual(reader.read(512,10),b"tail")
         with self.assertRaisesRegex(Exception,"status 5"):reader.read(512,10)
         self.assertEqual(reader.inflight,1)
 
     def test_failed_submit_is_counted_and_reported(self):
-        reader=daemon.AsyncIn(FakeEngine(fail_submit=1),TimeoutError,transfers=3,transfer_bytes=1024)
+        reader=usb_engines.AsyncIn(FakeEngine(fail_submit=1),TimeoutError,transfers=3,transfer_bytes=1024)
         self.assertEqual(reader.inflight,2)
         with self.assertRaisesRegex(Exception,"resubmit failed"):reader.read(512,10)
 
     def test_stop_waits_for_cancellations_and_refuses_while_in_flight(self):
-        engine=FakeEngine();reader=daemon.AsyncIn(engine,TimeoutError,transfers=2,transfer_bytes=1024)
+        engine=FakeEngine();reader=usb_engines.AsyncIn(engine,TimeoutError,transfers=2,transfer_bytes=1024)
         with self.assertRaisesRegex(Exception,"still in flight"):reader.stop(.05)
         self.assertTrue(engine.cancelled);self.assertFalse(engine.closed)
         self.assertFalse(reader.complete(0,3,b""));self.assertFalse(reader.complete(1,0,b"late"))
@@ -282,8 +285,8 @@ class AsyncInTests(unittest.TestCase):
         self.assertTrue(engine.closed);self.assertEqual(reader.summary()["inflight"],0)
 
     def test_ready_queue_is_bounded(self):
-        reader=daemon.AsyncIn(FakeEngine(),TimeoutError,transfers=1,transfer_bytes=1024)
-        with patch.object(daemon,"ASYNC_READY_LIMIT",1000):
+        reader=usb_engines.AsyncIn(FakeEngine(),TimeoutError,transfers=1,transfer_bytes=1024)
+        with patch.object(usb_engines,"ASYNC_READY_LIMIT",1000):
             self.assertFalse(reader.complete(0,0,b"x"*1500))
         while reader.ready:reader.read(512,10)
         with self.assertRaisesRegex(Exception,"limit exceeded"):reader.read(512,10)
@@ -291,8 +294,8 @@ class AsyncInTests(unittest.TestCase):
     def test_timing_uses_async_reader_and_owner_stops_it_after_reader(self):
         engine=FakeEngine();made=[]
         def factory(device,endpoint,timeout_error):
-            made.append(endpoint);return daemon.AsyncIn(engine,timeout_error,transfers=1,transfer_bytes=1024)
-        timing=daemon.UsbTiming(FakeUsb([]),async_in=factory,timeout_error=TimeoutError)
+            made.append(endpoint);return usb_engines.AsyncIn(engine,timeout_error,transfers=1,transfer_bytes=1024)
+        timing=usb_engines.UsbTiming(FakeUsb([]),async_in=factory,timeout_error=TimeoutError)
         def feed():timing.async_in.complete(0,0,b"z"*600)
         threading_timer=__import__("threading").Timer(.05,feed)
         with self.assertRaises(TimeoutError):timing.read(133,512,1)
@@ -523,7 +526,7 @@ class CursorRelayTests(unittest.TestCase):
         self.path=os.path.join(self.dir.name,"cursor.fifo")
         os.mkfifo(self.path,0o600)
         self.now=[0.0]
-        self.relay=daemon.CursorRelay(self.path,clock=lambda:self.now[0])
+        self.relay=cursor_relay.CursorRelay(self.path,clock=lambda:self.now[0])
 
     def tearDown(self):
         self.relay.close()
@@ -561,7 +564,7 @@ class CursorRelayTests(unittest.TestCase):
         try:
             self.relay.flush()
             self.assertEqual(self.os.read(fd,64),b"")  # no writer opened yet: nothing sent
-            self.now[0]+=daemon.CURSOR_OPEN_RETRY_SECONDS
+            self.now[0]+=cursor_relay.CURSOR_OPEN_RETRY_SECONDS
             self.relay.flush()
             self.assertEqual(self.os.read(fd,64),b"C 1000 0\n")
             self.assertEqual(self.relay.summary()["last_id"],1000)
@@ -578,10 +581,10 @@ class CursorRelayTests(unittest.TestCase):
                     {"MSG":"MOUSE_CURSOR_CHANGE","PARAM":{"MOUSE_CURSOR_ID":-1}},
                     {"MSG":"MOUSE_CURSOR_CHANGE"},
                     {"TYPE":"NOTI","MSG":"OTHER","PARAM":{"MOUSE_CURSOR_ID":1002}}):
-            relay=daemon.CursorRelay(self.path)
+            relay=cursor_relay.CursorRelay(self.path)
             relay.feed(common(bad));relay.flush()
             self.assertIsNone(relay.pending)
-        broken=daemon.CursorRelay(self.path)
+        broken=cursor_relay.CursorRelay(self.path)
         broken.feed(b"\x09\x64\x00\x08xxxx"+cursor(1002))
         self.assertEqual((broken.error,broken.pending),("invalid frame header",None))
 
@@ -617,7 +620,7 @@ class ProfileTests(unittest.TestCase):
 class SinkDropTests(unittest.TestCase):
     def test_overflow_and_detach_drops_are_counted_apart(self):
         import os
-        sink=daemon.DetachableSink("/nonexistent/ts.fifo",queue_bytes=2000)
+        sink=daemon_sink.DetachableSink("/nonexistent/ts.fifo",queue_bytes=2000)
         sink.attached=True
         sink.put(b"a"*1316)
         sink.put(b"b"*1316)          # queue full while attached: real loss
@@ -660,9 +663,9 @@ class AsyncOutTests(unittest.TestCase):
     def timing(self,engine,transfers=3):
         made=[]
         def factory(device,on_done):
-            made.append(device);return daemon.AsyncOut(engine,transfers=transfers,on_done=on_done)
+            made.append(device);return usb_engines.AsyncOut(engine,transfers=transfers,on_done=on_done)
         device=FakeUsb([])
-        return daemon.UsbTiming(device,async_out=factory),device,made
+        return usb_engines.UsbTiming(device,async_out=factory),device,made
 
     def test_queue_order_with_a_bounded_window_and_zlp_kept_in_place(self):
         engine=FakeOutEngine();timing,device,made=self.timing(engine)
@@ -710,7 +713,7 @@ class AsyncOutTests(unittest.TestCase):
         reader=SimpleNamespace(stop=lambda:None,alive=lambda:False,stop_done=True,summary=lambda:{})
         owner.current=SimpleNamespace(usb_timing=timing);owner.quiesced=False;owner.quiesce_error=None;owner.reader=reader
         released=[];owner.util=SimpleNamespace(release_interface=lambda *a:released.append(a));owner.result={}
-        with patch.object(daemon,"WRITER_STOP_SECONDS",.05):
+        with patch.object(usb_engines,"WRITER_STOP_SECONDS",.05):
             stop=timing.async_out.stop
             timing.async_out.stop=lambda seconds:stop(.05)
             with self.assertRaisesRegex(Exception,"still in flight; USB resource release prohibited"):
@@ -724,7 +727,7 @@ class AsyncOutTests(unittest.TestCase):
 
     def test_engine_setup_failure_keeps_synchronous_writes(self):
         def factory(device,on_done):raise OSError("no libusb")
-        device=FakeUsb([]);timing=daemon.UsbTiming(device,async_out=factory)
+        device=FakeUsb([]);timing=usb_engines.UsbTiming(device,async_out=factory)
         for frame in (b"a",b"bc"):timing.write(1,frame)
         timing.stop_writer()
         self.assertEqual(device.written,[1,2])
@@ -748,7 +751,7 @@ class AsyncOutTests(unittest.TestCase):
             self.assertTrue(wait_for(lambda:session.usb_timing.async_out is not None
                                      and session.usb_timing.async_out.engine.held))
         self.assertEqual(len(made),1)
-        self.assertIsInstance(session.usb_timing.async_out,daemon.AsyncOut)
+        self.assertIsInstance(session.usb_timing.async_out,usb_engines.AsyncOut)
         session.usb_timing.async_out.engine.finish()
         session.usb_timing.stop_writer()
 

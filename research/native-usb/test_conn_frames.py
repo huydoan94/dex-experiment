@@ -4,10 +4,13 @@ import struct
 import unittest
 from conn_frames import Decoder, Frame, encode
 
+SAVED = (Path(__file__).resolve().parent / "query-20261101T171251Z").is_dir()
+
 ROOT = Path(__file__).resolve().parent
 
 
 class FramingTests(unittest.TestCase):
+    @unittest.skipUnless(SAVED, "saved capture is kept outside the repository")
     def test_saved_actual_phone_response_all_split_positions(self):
         raw = (ROOT / 'query-20261101T171251Z/response.bin').read_bytes()
         self.assertEqual(hashlib.sha256(raw).hexdigest(),
@@ -21,6 +24,7 @@ class FramingTests(unittest.TestCase):
             self.assertEqual(struct.unpack_from('<I', frames[0].body)[0], 0)
             self.assertEqual(encode(frames[0]), raw)
 
+    @unittest.skipUnless(SAVED, "saved capture is kept outside the repository")
     def test_saved_request_and_notification(self):
         for path in ('query-20261101T171251Z/request.bin',
                      'bootstrap-20261101T201318Z/notification.bin'):
