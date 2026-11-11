@@ -79,6 +79,23 @@ each area. Raw measurements are kept outside this repository.
 - Tried and rejected: decoder LOW_DELAY (broke B-frame EOF/pixel parity), a
   fixed 40 ms audio target (11-14 rebuffers per 30 s).
 
+## Clipboard and files (2026-11-10/11)
+
+- **Clipboard did nothing.** The request went on the IDC handshake connection;
+  the phone takes each IDC command on a fresh connection to its control port.
+  *Fix:* clipboard_bridge opens one per request (host ports 50100+).
+- **Copied files never offered.** The WinRT clipboard gave this unpackaged app no
+  file list. *Fix:* read CF_HDROP; offer per clipboard change counter, so the
+  same file copied again is offered again.
+- **Phone ignored file transfer.** It asks `REQ FeatureList` at KMS start.
+  *Fix:* answer `FeatureList "KMS_FT_SUPPORTED"` as the PC app does; resend an
+  unanswered FILE clip (3 s, 5 tries).
+- **Paste did nothing.** My Files sends `/Document` from a category view, not a
+  folder. *Fix:* paste inside a real folder (documented).
+- **Drag landed after release / landed after leaving.** *Fix:* drive the phone's
+  drag with mouse events 13/9/10 while hovering; on leaving, empty its file list
+  so the drop becomes a cancel.
+
 ## Operations incidents
 
 - **2026-11-07 02:19 stream drop** — the phone rebooted for an OMC software

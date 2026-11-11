@@ -9,14 +9,23 @@
   },
   "backend_container": {
    "path": "runtime subset of research/native-usb on the backend machine",
-   "dexd.py": "5bd8d74629b949bb95f5dcd6b853a140a7e57e893c006f0f615f9df14ab62754",
-   "kms_daemon_live.py": "e061b6af4b7c87d1140e04329ae659a8abbba7d83c71cf1eb3169899708bca73",
-   "kms_daemon_probe.py": "810bc80692377c2a9a8a0a449f3fcd139fa3fffefe1678e0c5b4505657a47301",
-   "direct_gateway.py": "99d3cc48f29e696ebd41b904bc267f6fa35e119835173dfa1ae4a67f071e6777",
+   "dexd.py": "82cba96cb392c54ac20c28bc37c4b851dfba728fa877d8a1af8fa5407fbe0cfb",
+   "kms_daemon_live.py": "b0804406f9354df67a963e76c1d365fa6173f83b2235c06d9b7c0ade36c2aa7a",
+   "kms_daemon_probe.py": "76da72e6d9a33e08552287fff3e92094841ca1c5c8aa512011f6d649df46202b",
+   "direct_gateway.py": "2451bdeb9cc2ad956675697c81e04ee4eb3fb34ef499fadfc03bea2196f167c2",
    "tcp_control.py": "5b7b82c364fc620a1f937c8c377a12191388649ff52c4359efb77b8fce0080e1",
    "blackscreen/blackscreen.sh": "42f6568251273ac57f671b4bf3b13242a42a8ad5a50d94447bbc9305591df808",
-   "rollbacks": "previous two versions kept on the backend machine",
-   "site_settings": "time zone and phone serial from a local config file"
+   "site_env.py": "4787c7ff8a4b2a0afaf5e2fc68834530f5beb08d5d1a006de01de0b902294fd9",
+   "rtsp_capabilities.py": "751c6ecd628906a257e27680efc3737a46d32db37e3cdeac5d641edcc169a12d",
+   "capabilities_probe.py": "f9a3ab2a8fa01d48c986e7a8d70fc9174470c0508637f55982e85bf599c0e5f6",
+   "idc.py": "b42bc257c1f8045682636b731a990754048ea954225ccbbbe6dcd8d339e6c2d6",
+   "ui_confirm.py": "dcc55d9ab5866842370f6dd39f84f803a0ba0e3c1ae050be7d6edf48058c0394",
+   "kms_session_live.py": "94d8e9548e313f14a7dd9af1c9b8b43b07920f24d74d25ee39c8f38250601f9f",
+   "rollbacks": "before-*-20261110 and before-*-20261111 on the backend machine",
+   "site_settings": "time zone, phone serial and sink name from a local config file; optional video_mode (1080p30 default, all, 1080p60)",
+   "clipboard_bridge.py": "4471c768f0210c092244430aeb412a834d85b9b80e2bdc086b6adb8e870e3225",
+   "file_bridge.py": "1afc3615e7aedeb34689743183a2d73e9797dad07f247d29760206c4c880cba2",
+   "idc_handshake.py": "6560f0896ffd2e8f81c1a47f02623a67d7496846412aad24c0fd7e6c420c84db"
   }
  },
  "features": {
@@ -64,6 +73,11 @@
   },
   "site-settings": {
    "verified": "2026-11-07 13:18 restart: dexd 5bd8d746 started, black screen check via configured serial OK, local-time logs, session streaming"
+  },
+  "clipboard-and-files": {
+   "verified": "2026-11-11 user sessions",
+   "text_clipboard": "both ways",
+   "files_pc_to_phone": "copy-paste into a real folder (My Files), drag and drop following the pointer, cancel on leaving the picture, delivery progress"
   }
  },
  "open": [
@@ -71,6 +85,7 @@
   "connect refusal avoided by replug, root cause unknown",
   "no physical/optical latency measurement",
   "19 older test modules need fixtures archived 2026-11-06",
-  "client features waiting: clipboard, resolution choice / 720p60, drag and drop"
+  "files phone to PC not built",
+  "usb_tunnel ends a session after 16 phone-initiated connections in total"
  ]
 }

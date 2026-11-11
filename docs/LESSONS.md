@@ -41,3 +41,7 @@ Short rules learned the hard way. The stories behind them are in
   does not prove there was no error.
 - Report results honestly; a clean later run does not prove an older failure
   was fixed.
+- the Windows build machine's share maps the DOS Archive attribute to execute: set Archive on
+  build outputs to run them there. 
+- Phone logs at debug level are invisible; add backend log lines for each
+  protocol step before the next live attempt instead of guessing.
