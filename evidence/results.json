@@ -86,6 +86,6 @@
   "no physical/optical latency measurement",
   "19 older test modules need fixtures archived 2026-11-06",
   "files phone to PC not built",
-  "usb_tunnel ends a session after 16 phone-initiated connections in total"
+  "usb_tunnel caps phone-initiated connections at 16 per session (sessions use 1 today); phone-to-PC drag would need open-connection counting"
  ]
 }

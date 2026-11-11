@@ -44,9 +44,9 @@ evidence/results.json, evidence/checks.log, docs/FIXES.md and MANIFEST.sha256.
   unknown.
 - No physical/optical latency or listening measurement; user feel is the test.
 - Files phone to PC (drag out of the DeX window, phone copy then PC paste) not
-  built; protocol mapped in docs/FILE_TRANSFER.md. Before it: usb_tunnel ends a
-  session after 16 phone-initiated connections in total, and the phone opens
-  one per IDC event, so long sessions can hit it (count open ones instead).
+  built; protocol mapped in docs/FILE_TRANSFER.md. With it: usb_tunnel's
+  arbitrary cap of 16 phone-initiated connections per session (sessions use 1
+  today) would end a session after ~15 drag-outs; count open ones instead.
 - Resolution: the phone picks; it gives DeX on PC only 1080p30 (720p60 and
   1080p60 refused, 2026-11-10).
 
