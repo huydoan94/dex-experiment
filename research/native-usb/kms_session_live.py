@@ -28,6 +28,10 @@ PRESS_OF={release:press for press,release in PRESS.items()}
 FILE_DRAG=frozenset((13,9,10))
 MOUSE_EVENTS=frozenset((base.MOVE,*PRESS,*PRESS_OF,*base.SCROLL,*FILE_DRAG))
 KEY=re.compile(rb"K ([du]) ([0-9]{1,3})")
+# A move one step past the picture's edge (-1 or the full width/height), sent while
+# the left button drags out of the picture: the phone's drag leaves its screen
+# instead of resting on whatever lies at the edge.
+EDGE_MOVE=re.compile(rb"M 0 (-1|[0-9]{1,4}) (-1|[0-9]{1,4})")
 # Latency: the media window reads input once per slice (run 72: 0.05 s, ~25 ms average).
 SESSION_SLICE_SECONDS=.01
 # One send per slice at most; the viewer sends moves at up to 60/s: 60000 covers the 15 min cap.
@@ -159,6 +163,11 @@ class InputReader(base.InputReader):
             except ValueError:
                 return None
             return ("P",text)
+        match=EDGE_MOVE.fullmatch(line)
+        if match:
+            x,y=int(match[1]),int(match[2])
+            if (x<0 or y<0 or x==base.WIDTH or y==base.HEIGHT) and -1<=x<=base.WIDTH and -1<=y<=base.HEIGHT:
+                return (base.MOVE,*site_env.to_desktop(x,y))
         match=base.LINE.fullmatch(line)
         if match:
             event,x,y=int(match[1]),int(match[2]),int(match[3])
