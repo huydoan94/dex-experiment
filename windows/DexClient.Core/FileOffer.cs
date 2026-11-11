@@ -48,6 +48,15 @@ public sealed class FileOffer
 
     public static string ChunkLine(ReadOnlySpan<byte> data) => "B " + Convert.ToBase64String(data);
 
+    // The phone starts its own drag about 300 ms after the drag start (13), treats a drop
+    // within 200 ms of that as a "fast drop", and lands a drop only after a move (9) that
+    // arrived while its drag was running (DeXonPC e2/h). A quick drag on the PC can end
+    // before that, and the phone then drops nothing. So the drop is sent as a move at the
+    // drop point no earlier than MinDropMs after the start, then the drop SettleMs later.
+    public const int MinDropMs = 700, SettleMs = 150;
+    public static (int DelayMs, string Line)[] DropLines(string at, long sinceStartMs) =>
+        [((int)Math.Clamp(MinDropMs - sinceStartMs, 0, MinDropMs), $"M 9 {at}"), (SettleMs, $"M 10 {at}")];
+
     // Progress from an "S <file> <bytes> <done>" line (bytes the phone accepted):
     // (delivered, total, finished) or null for anything else.
     public (long Delivered, long Total, bool Finished, int File)? Delivered(string line)
