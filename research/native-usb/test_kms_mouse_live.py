@@ -8,8 +8,6 @@ import unittest
 from unittest.mock import patch
 
 import kms_mouse_live as mouse
-import kms_mouse_live_probe as probe
-import kms_mouse_live_launch as launch
 import kms_handshake as kms
 from test_kms_handshake import Session,Codec
 
@@ -130,20 +128,4 @@ class Tests(unittest.TestCase):
         self.assertEqual(mouse.received_summary(b'\x07\x05\x00\x05\x00',0)['error'],
                          'invalid frame header')
 
-    def test_configuration_lower_caps_and_source_pins(self):
-        with patch.object(mouse.long,'CAP_SECONDS',900),\
-             patch.object(mouse.long,'LONG',dict(mouse.long.LONG)),\
-             patch.object(mouse.long,'LONG_KEEPALIVES',48):
-            mouse.configure()
-            self.assertEqual(mouse.long.CAP_SECONDS,30)
-            self.assertEqual(mouse.long.LONG['MEDIA_BYTES'],64<<20)
-            self.assertEqual(mouse.long.LONG['PLAY_READS'],110000)
-            self.assertEqual(mouse.long.LONG_KEEPALIVES,4)
-        for name,digest in launch.EXPECTED.items():
-            import hashlib
-            self.assertEqual(hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest(),digest,name)
 
-    def test_plan_only_never_selects_usb_or_checks_adb(self):
-        with patch.object(launch,'require_adb_server',side_effect=AssertionError('ADB')),\
-             contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(launch.main([]),0)

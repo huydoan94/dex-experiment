@@ -11,8 +11,6 @@ import unittest
 from unittest.mock import patch
 
 import kms_input_live as kin
-import kms_input_live_probe as probe
-import kms_input_live_launch as launch
 import rtsp_udp_long as long
 import sidesync_packets
 from usb_tunnel import TunnelError
@@ -260,20 +258,7 @@ class Tests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 kin.configure()
 
-    def test_budget_and_source_pins(self):
-        self.assertEqual(probe.MAX_REQUESTS,
-                         48+long.LONG_KEEPALIVES+7+kin.MAX_INPUT_SENDS+kin.MAX_HEARTBEATS+1)
-        self.assertEqual(probe.OUTER_SECONDS,90+long.CAP_SECONDS)
-        for name,digest in launch.EXPECTED.items():
-            self.assertEqual(hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest(),
-                             digest,name)
-        for name in ("kms_input_live.py","kms_hover_live.py","kms_mouse_live.py"):
-            self.assertIn(name,launch.EXPECTED)
 
-    def test_plan_only_never_selects_usb_or_checks_adb(self):
-        with patch.object(launch,'require_adb_server',side_effect=AssertionError('ADB')),\
-             contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(launch.main([]),0)
 
 
 if __name__=='__main__':

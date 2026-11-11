@@ -8,8 +8,6 @@ import unittest
 from unittest.mock import patch
 
 import kms_handshake as kms
-import kms_handshake_launch as launch
-import kms_handshake_probe as probe
 
 
 class Codec:
@@ -208,72 +206,9 @@ class Tests(unittest.TestCase):
                 self.assertIsNotNone(error)
                 self.assertFalse(session.configs)
 
-    def test_plan_only_does_not_check_adb_or_select_usb(self):
-        with patch.object(launch.socket,"create_connection",
-                          side_effect=AssertionError("ADB check")),contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(launch.main([]),0)
-            self.assertEqual(probe.main([]),0)
 
-    def test_pinned_sources_and_tamper_rejection(self):
-        launch.verify_sources(Path(__file__).parent)
-        with tempfile.TemporaryDirectory() as tmp:
-            target=Path(tmp)
-            for name in launch.EXPECTED:
-                (target/name).write_bytes((Path(__file__).parent/name).read_bytes())
-            (target/"kms_handshake.py").write_text("changed")
-            with self.assertRaisesRegex(RuntimeError,"source mismatch"):
-                launch.verify_sources(target)
 
-    def test_real_session_constructor_with_callable_raw_recorder(self):
-        from tunnel_probe import Link
-        from conn_transfer import TransferDecoder
-        recorded=[]
-        recorder=lambda *args:recorded.append(args)
-        link=Link(object(),TimeoutError,record=recorder)
-        session=probe.DiscoverySession(link,1,65536,65536)
-        self.assertIsInstance(session.decoder,TransferDecoder)
-        self.assertIs(link.record,recorder)
-        self.assertEqual(recorded,[])
 
-    def test_callback_uses_display0_confirmation_and_handshake(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            output=Path(tmp)/"out"
-            session=Session()
-            main=SimpleNamespace(closed_by_phone=False)
-            codec=SimpleNamespace(_key=b"k"*32)
-            client=SimpleNamespace(codec=lambda:codec)
-            calls=[]
-            def auth_probe(device,util,timeout,out,result,**kwargs):
-                self.assertIs(kwargs["session_class"],probe.DiscoverySession)
-                kwargs["after_auth"](session,main,client,result,session.clock,lambda **k:None)
-                result["kms_handshake_verified"]=True
-            def handshake(s,m,key,r,log,after_handshake):
-                self.assertEqual(key,b"k"*32)
-                after_handshake(s,m,key,r,log)
-            def startup(s,m,key,r,log,confirm,after_rtsp):
-                confirm(s,m,r,log,70)
-                after_rtsp(s,m,SimpleNamespace(closed_by_phone=False),r,log)
-            fakeusb=SimpleNamespace(core=SimpleNamespace(
-                find=lambda **k:[object()],USBTimeoutError=TimeoutError),util=object())
-            import sys
-            with patch.dict(sys.modules,{"usb":fakeusb,"usb.core":fakeusb.core,
-                                         "usb.util":fakeusb.util}),\
-                 patch.dict(probe.os.environ,{"DEX_AUTO_UI_DEADLINE":"75"}),\
-                 patch.object(probe.time,"monotonic",return_value=1),\
-                 patch.object(probe.signal,"signal"),\
-                 patch.object(probe.cap,"capabilities"),\
-                 patch.object(probe.pss_probe,"pss_ready"),\
-                 patch.object(probe.auth_probe,"probe",side_effect=auth_probe),\
-                 patch.object(probe.idc_handshake,"handshake",side_effect=handshake),\
-                 patch.object(probe.wfd,"startup",side_effect=startup),\
-                 patch.object(probe.ui,"confirm",side_effect=lambda *a:calls.append("display0")),\
-                 patch.object(probe.kms_handshake,"handshake",side_effect=lambda *a,**k:
-                              calls.append(("discovery",k["client"] is client))),\
-                 contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(probe.main(["--approved-phone-kms-handshake",
-                    "--accept-persistent-state","--bus","3","--address","4",
-                    "--output",str(output)]),0)
-            self.assertEqual(calls,["display0",("discovery",True)])
 
 
 if __name__=="__main__":

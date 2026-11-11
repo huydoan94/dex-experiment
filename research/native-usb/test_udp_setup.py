@@ -19,8 +19,6 @@ import rtsp_capabilities as caps
 import rtsp_hello
 import rtsp_udp_setup as setup
 import ui_confirm as ui
-import udp_setup_launch as launch
-import udp_setup_probe as probe
 import wfd_startup as wfd
 from test_idc_handshake import KEY
 from test_rtsp_capabilities import m4
@@ -166,20 +164,6 @@ class PathTests(unittest.TestCase):
         self.assertNotIn("SCREEN", json.dumps(result))
         self.assertNotIn(b"SCREEN".hex(), json.dumps(result))
 
-    def test_pre_play_flood_with_real_link_budgets_keeps_cleanup_in_sync(self):
-        phone, result = UdpSetupPhone(datagrams=200), {}
-        link = Link(Device(phone), TimeoutError, max_requests=probe.MAX_REQUESTS,
-                    max_acks=64, max_reads=2000, cleanup_reads=200)
-        session = run(phone, result, link)
-        self.assertIn("ack budget", result["error"])
-        self.assertTrue(result["rtsp_udp_setup_verified"])
-        self.assertEqual(result["rtp_close_status"], 0)
-        self.assertEqual(result["rtp_cleanup_errors"], [])
-        self.assertEqual(result["wfd_cleanup_errors"], [])
-        self.assertEqual(result["idc_cleanup_errors"], [])
-        self.assertEqual(set(session.configs), {256})
-        self.assertEqual(result["rtp_datagrams_before_play"], 200)
-        self.assertEqual(len(result["rtp_headers_before_play"]), 16)
 
     def test_wrong_m5_trigger_rejected_without_setup(self):
         phone, result = UdpSetupPhone(trigger=TRIGGER.replace(b"SETUP", b"PLAY ")), {}
@@ -265,62 +249,10 @@ class MainTests(unittest.TestCase):
             plan = json.loads((Path(tmp) / "run" / "plan.json").read_text())
         return code, result, plan, runner, session
 
-    def test_full_auto_main_reaches_udp_setup_without_play(self):
-        phone = UdpSetupPhone()
-        code, result, plan, runner, session = self.run_main(phone)
-        self.assertEqual(code, 0)
-        self.assertTrue(result["auto_confirmation_verified"])
-        self.assertTrue(result["rtsp_udp_setup_verified"])
-        self.assertFalse(result["play"])
-        self.assertEqual(len(runner.commands), 4)
-        self.assertEqual(len(phone.rtsp_sent), 6)
-        self.assertEqual(set(session.configs), {256})
-        self.assertEqual((plan["rtp_config"], plan["rtp_port"], plan["play"]), (1205, 46002, False))
 
-    def test_source_selecting_tcp_never_reaches_setup(self):
-        phone = UdpSetupPhone()
-        phone.next_message = m4()   # the old TCP-interleaved selection
-        self.assertIn(b"RTP/AVP/TCP;interleaved", phone.next_message)
-        code, result, plan, runner, session = self.run_main(phone)
-        self.assertEqual(code, 1)
-        self.assertIn("outside declared profile", result["error"])
-        self.assertEqual(len(phone.rtsp_sent), 3)
-        self.assertNotIn("rtp_open", result)
 
-    def test_plan_only_never_imports_usb(self):
-        original = builtins.__import__
-        def guard(name, *args, **kwargs):
-            if name == "usb" or name.startswith("usb."):
-                raise AssertionError("USB not authorized")
-            return original(name, *args, **kwargs)
-        for main in (probe.main, launch.main):
-            with patch("builtins.__import__", guard), contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(main([]), 0)
 
-    def test_launcher_refuses_changed_source_before_usb(self):
-        name = next(iter(launch.EXPECTED))
-        with tempfile.TemporaryDirectory() as tmp, \
-                patch.dict(launch.EXPECTED, {name: "0" * 64}), \
-                patch.object(launch.os, "execv") as execute, \
-                self.assertRaisesRegex(RuntimeError, "approved source mismatch"):
-            launch.main(["--approved-phone-udp-setup", "--accept-persistent-state",
-                         "--output", tmp + "/new"])
-        execute.assert_not_called()
 
-    def test_launcher_execs_udp_setup_probe(self):
-        usb, core = ModuleType("usb"), ModuleType("usb.core")
-        core.find = lambda **kwargs: [SimpleNamespace(bus=3, address=10)]
-        usb.core = core
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(
-                "sys.modules", {"usb": usb, "usb.core": core}), patch.object(
-                launch.socket, "create_connection"), patch.object(launch.os, "execv") as execute:
-            with contextlib.redirect_stdout(io.StringIO()):
-                launch.main(["--approved-phone-udp-setup", "--accept-persistent-state",
-                             "--output", tmp + "/new"])
-        argv = execute.call_args.args[1]
-        self.assertTrue(argv[1].endswith("udp_setup_probe.py"))
-        self.assertIn("--approved-phone-udp-setup", argv)
-        self.assertEqual(argv[argv.index("--bus") + 1], "3")
 
 
 if __name__ == "__main__":

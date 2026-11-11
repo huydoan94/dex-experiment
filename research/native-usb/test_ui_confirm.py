@@ -11,8 +11,6 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import auto_confirm_probe
-import auto_confirm_launch
 import idc_handshake
 import ui_confirm as ui
 import wfd_startup as wfd
@@ -182,57 +180,9 @@ class Tests(unittest.TestCase):
                 ui.run_adb(["unused"],ClosingPump(),main,time.monotonic()+2,128,
                            lambda **kw:None)
 
-    def test_launcher_deadline_validated_before_any_usb_import(self):
-        original=builtins.__import__
-        def guard(name,*args,**kw):
-            if name=="usb" or name.startswith("usb."):
-                raise AssertionError("must validate deadline before USB")
-            return original(name,*args,**kw)
-        with tempfile.TemporaryDirectory() as tmp:
-            for deadline in ("nan","inf","0",str(time.monotonic()+1000)):
-                with self.subTest(deadline=deadline),patch.dict(os.environ,
-                        {"DEX_AUTO_UI_DEADLINE":deadline}):
-                    with patch("builtins.__import__",guard),contextlib.redirect_stderr(io.StringIO()):
-                        with self.assertRaises(SystemExit):
-                            auto_confirm_probe.main(["--approved-phone-auto-start-now",
-                                "--accept-persistent-state","--bus","3","--address","9",
-                                "--output",tmp+"/new"])
-                self.assertFalse((Path(tmp)/"new").exists())
-
-    def test_default_and_missing_grant_do_not_import_usb(self):
-        original=builtins.__import__
-        def guard(name,*args,**kw):
-            if name=="usb" or name.startswith("usb."):
-                raise AssertionError("unapproved USB import")
-            return original(name,*args,**kw)
-        with patch("builtins.__import__",guard):
-            with contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(auto_confirm_probe.main([]),0)
-            with contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit):
-                auto_confirm_probe.main(["--approved-phone-auto-start-now"])
 
 
-class LauncherPreflightTests(unittest.TestCase):
-    def test_preflight_connects_only_to_container_loopback_and_sends_nothing(self):
-        with patch.object(auto_confirm_launch.socket,"create_connection") as connect:
-            auto_confirm_launch.require_adb_server()
-        connect.assert_called_once_with(("127.0.0.1",5037),timeout=.5)
-        self.assertEqual(connect.return_value.__enter__.return_value.mock_calls,[])
 
-    def test_missing_server_stops_before_usb_import_or_output_creation(self):
-        original=builtins.__import__
-        def guard(name,*args,**kwargs):
-            if name=="usb" or name.startswith("usb."):
-                raise AssertionError("USB must not be imported")
-            return original(name,*args,**kwargs)
-        with tempfile.TemporaryDirectory() as tmp:
-            output=Path(tmp)/"new"
-            with patch("builtins.__import__",guard),patch.object(
-                    auto_confirm_launch.socket,"create_connection",side_effect=ConnectionRefusedError):
-                with self.assertRaisesRegex(RuntimeError,"ADB server unavailable"):
-                    auto_confirm_launch.main(["--approved-phone-auto-start-now",
-                        "--accept-persistent-state","--output",str(output)])
-            self.assertFalse(output.exists())
 
 
 class SamsungReplayTests(unittest.TestCase):

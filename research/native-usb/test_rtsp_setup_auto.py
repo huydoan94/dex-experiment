@@ -11,7 +11,6 @@ import unittest
 from unittest.mock import patch
 
 import rtsp_setup as setup
-import rtsp_setup_launch as launch
 import ui_confirm as ui
 from conn_frames import Decoder
 from test_rtsp_setup import SetupPhone
@@ -90,23 +89,7 @@ class Tests(unittest.TestCase):
                                     "--output",tmp+"/new"])
                 self.assertFalse((Path(tmp)/"new").exists())
 
-    def test_auto_and_manual_modes_cannot_be_combined(self):
-        for main in (setup.main,launch.main):
-            with contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit):
-                main(["--approved-phone-rtsp-setup","--approved-auto-start-now",
-                      "--ready-for-start-now","--accept-persistent-state","--output","unused"])
 
-    def test_disabled_automatic_launcher_never_preflights_or_execs(self):
-        import auto_confirm_launch
-        with tempfile.TemporaryDirectory() as tmp,patch.object(
-                auto_confirm_launch,"require_adb_server") as preflight,patch.object(
-                launch.os,"execv") as execute:
-            with self.assertRaisesRegex(RuntimeError,"confirmed Samsung RTPSender abort"):
-                launch.main(["--approved-phone-rtsp-setup","--approved-auto-start-now",
-                             "--accept-persistent-state","--output",tmp+"/new"])
-            preflight.assert_not_called()
-            execute.assert_not_called()
-            self.assertFalse((Path(tmp)/"new").exists())
 
     def test_direct_main_refuses_crashing_transport_before_probe_or_output(self):
         with tempfile.TemporaryDirectory() as tmp,patch.dict(

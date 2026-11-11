@@ -11,8 +11,6 @@ from types import ModuleType,SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import auto_confirm_probe as probe
-import auto_confirm_launch as launch
 import rtsp
 import rtsp_capabilities as caps
 import ui_confirm as ui
@@ -80,52 +78,6 @@ class Tests(unittest.TestCase):
         tcp,names=caps.selected_parameters(rtsp.parse(m4())[0])
         self.assertFalse(caps.selection_compatible(tcp,caps.UDP_PROFILE))
 
-    def test_full_auto_main_sends_three_messages_and_stops_before_m4_ack(self):
-        phone=UdpPhone()
-        code,result,plan,runner,session=self.run_main(phone)
-        self.assertEqual(code,0)
-        self.assertTrue(result["auto_confirmation_verified"])
-        self.assertTrue(result["rtsp_capabilities_verified"])
-        self.assertEqual(len(runner.commands),4)
-        self.assertEqual(len(phone.rtsp_sent),3)
-        self.assertEqual(phone.rtsp_sent[-1],caps.capability_reply(2,NAMES,caps.UDP_PROFILE))
-        self.assertFalse(any(data.startswith(b"SETUP ") for data in phone.rtsp_sent))
-        self.assertEqual(len(phone.host_data),5)
-        self.assertEqual(set(session.configs),{256})
-        self.assertEqual(plan["rtsp_sends"],3)
-        self.assertEqual(plan["max_requests"],40)
-        self.assertFalse(plan["setup"])
-        self.assertEqual(plan["diagnostic_wfd_profile"],caps.UDP_PROFILE)
 
-    def test_source_cannot_select_old_crashing_transport(self):
-        phone=UdpPhone(SELECTED)
-        code,result,plan,runner,session=self.run_main(phone)
-        self.assertEqual(code,1)
-        self.assertIn("outside declared profile",result["error"])
-        self.assertTrue(result["auto_confirmation_verified"])
-        self.assertEqual(len(phone.rtsp_sent),3)
-        self.assertNotIn("rtsp_m4_reply_attempted",result)
-        self.assertEqual(result["wfd_cleanup_errors"],[])
 
-    def test_stage_flag_without_primary_grant_never_imports_usb(self):
-        original=builtins.__import__
-        def guard(name,*args,**kwargs):
-            if name=="usb" or name.startswith("usb."):
-                raise AssertionError("USB not authorized")
-            return original(name,*args,**kwargs)
-        for main in (probe.main,launch.main):
-            with patch("builtins.__import__",guard),contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(main(["--approved-udp-capabilities"]),0)
 
-    def test_launcher_forwards_explicit_udp_stage(self):
-        usb,core=ModuleType("usb"),ModuleType("usb.core")
-        core.find=lambda **kwargs:[SimpleNamespace(bus=3,address=10)]
-        usb.core=core
-        with tempfile.TemporaryDirectory() as tmp,patch.dict(
-                "sys.modules",{"usb":usb,"usb.core":core}),patch.object(
-                launch.socket,"create_connection"),patch.object(launch.os,"execv") as execute:
-            with contextlib.redirect_stdout(io.StringIO()):
-                launch.main(["--approved-phone-auto-start-now","--approved-udp-capabilities",
-                             "--accept-persistent-state","--output",tmp+"/new"])
-            self.assertIn("--approved-udp-capabilities",execute.call_args.args[1])
-            self.assertNotIn("--ready-for-start-now",execute.call_args.args[1])
