@@ -10,7 +10,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 apk=$here/blackscreen.apk
-pinned=7b99d724d6c046d392889d595f92cf00cf2365db0f89e258c27ea6d31fe68621
+pinned=13e4017e5847406db06dd09ed898db52c26a89fd836b3fde9d3e6b57c40d9c33
 pkg=app.blackscreen
 # DEX_PHONE_SERIAL comes from dexd's private site settings; without it adb uses the
 # single attached phone (dexd only runs with exactly one).
