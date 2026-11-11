@@ -58,7 +58,7 @@ each area. Raw measurements are kept outside this repository.
 
 - **~10 ms polling delay on input** (2026-11-06). *Fix:* the input FIFO worker
   sleeps in poll() and ends the media slice early when input is queued.
-- **Early input closed sessions** (v7 cursor opt-in sent at connect). The daemon
+- **Early input closed sessions** (0.0.7 cursor opt-in sent at connect). The daemon
   only reads input once streaming starts. *Fix:* the client sends nothing on the
   input socket before its first picture.
 - **Pointer shape never changed on Windows** (2026-11-06). *Fix:* the phone's
@@ -67,10 +67,10 @@ each area. Raw measurements are kept outside this repository.
 
 ## Windows client (`windows/`)
 
-- **~150 ms input lag** (v4). Video waited for the audio clock (queue + WASAPI).
-  *Fix (v5):* "Low latency" (default on) shows the newest picture at once.
-- **Audio crackle/stutter** (v1-v3). Playback started with no buffer, so bursts
-  underran then overflowed. *Fix:* jitter buffer, then (v6) WASAPI 20 ms and an
+- **~150 ms input lag** (0.0.4). Video waited for the audio clock (queue + WASAPI).
+  *Fix (0.0.5):* "Low latency" (default on) shows the newest picture at once.
+- **Audio crackle/stutter** (0.0.1-0.0.3). Playback started with no buffer, so bursts
+  underran then overflowed. *Fix:* jitter buffer, then (0.0.6) WASAPI 20 ms and an
   adaptive target (40 → 160 ms on underruns, shrinks when quiet; settles ~80 ms).
   *Result:* audio drops 646,144 → 0 bytes.
 - **Glyph corruption on resize.** *Fix:* WinUI 2.6.5 (keep pinned).

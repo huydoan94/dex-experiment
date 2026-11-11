@@ -194,7 +194,7 @@ class GatewayTests(unittest.TestCase):
         for line in ok:self.assertTrue(Pair.phone_file_line(line.split(b' '),line),line[:20])
         for line in bad:self.assertFalse(Pair.phone_file_line(line.split(b' '),line),line[:20])
     def test_opt_in_before_the_daemon_reads_input_does_not_stall_the_session(self):
-        # 2026-11-06 v7 session A: an older gateway ended a session whose early opt-in
+        # 2026-11-06 0.0.7 session A: an older gateway ended a session whose early opt-in
         # could not drain into a not-yet-read input FIFO. The opt-in never enters the FIFO.
         input_client,media_client=self.pair()
         input_client.sendall(b'X cursor\n')

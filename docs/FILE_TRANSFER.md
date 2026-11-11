@@ -98,7 +98,7 @@ holds whole files.
    whose info ends with `,<timestamp>`; the phone then stops serving.
 
 Implemented in phone_files.py and the client's PhoneDrop / DropMarker
-(2026-11-11; works live with client v18/v19). Viewer lines: "DP" pull, "DD"
+(2026-11-11; works live; client 1.0.0). Viewer lines: "DP" pull, "DD"
 dropped, "DC" cancelled; back: "DS <count>", "FN <i> <size> <b64 name>",
 "FB <b64>", "FE", "FA", "FX <reason>".
 
