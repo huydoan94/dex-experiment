@@ -84,7 +84,7 @@ MAX_CHUNK_LINE=2+4*((49152+2)//3)
 FILE_CHUNK=re.compile(rb"B ([A-Za-z0-9+/=]{4,%d})"%(MAX_CHUNK_LINE-2))
 LONG_LINES={b"P ":MAX_CLIPBOARD_LINE,b"FO":MAX_CLIPBOARD_LINE,b"B ":MAX_CHUNK_LINE}
 READ_BYTES=65536
-SIDE_EVENTS=("P","R","FO","B","BX","FC")
+SIDE_EVENTS=("P","R","FO","B","BX","FC","DP","DD","DC")
 
 
 class InputReader(base.InputReader):
@@ -130,6 +130,9 @@ class InputReader(base.InputReader):
             return ("BX",)
         if line==b"FC":
             return ("FC",)
+        if line in (b"DP",b"DD",b"DC"):
+            # phone_files: drag out of the picture (pull), dropped, cancelled.
+            return (line.decode(),)
         if line.startswith(b"B "):
             match=FILE_CHUNK.fullmatch(line)
             try:

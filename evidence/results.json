@@ -9,7 +9,7 @@
   },
   "backend_container": {
    "path": "runtime subset of research/native-usb on the backend machine",
-   "dexd.py": "82cba96cb392c54ac20c28bc37c4b851dfba728fa877d8a1af8fa5407fbe0cfb",
+   "dexd.py": "187f3e5bc50470ad7779f87ed84d87b2e3c0f9be18b94542a46b083d3590a451",
    "kms_daemon_live.py": "b0804406f9354df67a963e76c1d365fa6173f83b2235c06d9b7c0ade36c2aa7a",
    "kms_daemon_probe.py": "76da72e6d9a33e08552287fff3e92094841ca1c5c8aa512011f6d649df46202b",
    "direct_gateway.py": "2451bdeb9cc2ad956675697c81e04ee4eb3fb34ef499fadfc03bea2196f167c2",

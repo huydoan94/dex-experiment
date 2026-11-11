@@ -22,7 +22,7 @@ if (( dex_age_seconds < 0 || dex_age_seconds > 45 )); then
     exit 1
 fi
 printf '%s\n' 'ac9a2b515d899a9de9ed2bd405b70374d9d0cd7068e3f55443573fee85d72e7a  research/native-usb/app_bootstrap.py' \
-    '4491a98624592740df5357daecf99f3343f6993cd77dcd2013b45b648be10cb5  research/native-usb/relisten_bootstrap.py' | sha256sum -c -
+    'cd046e4f554cbca5e46682e3a3c7b2d00dddf08ad0451539d924607f24aab254  research/native-usb/relisten_bootstrap.py' | sha256sum -c -
 dex_marker=research/native-usb/reconnect-$dex_started_epoch.used
 if ! (set -o noclobber; printf '%s\n' "$dex_now_epoch" > "$dex_marker") 2>/dev/null; then
     echo 'STOP: this reconnect marker has already been consumed.' >&2

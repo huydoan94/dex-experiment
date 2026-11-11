@@ -210,6 +210,39 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(base64.b64decode(lines[1][2:]).decode(), text)
         self.assertEqual(relay.counts["clip_sent"], 1)
 
+    def test_long_file_lines_survive_a_full_fifo(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "cursor.fifo"
+            os.mkfifo(path)
+            reader = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+            relay = daemon.CursorRelay(str(path))
+            sent = [b"FB " + base64.b64encode(bytes([i]) * 49152) + b"\n" for i in range(4)]
+            for line in sent:
+                relay.line(line)
+            out = bytearray()
+            for _ in range(400):
+                relay.flush()
+                relay.pending = (1003, 1) if relay.line_started else None  # never inside a line
+                try:
+                    out += os.read(reader, 30000)
+                except BlockingIOError:
+                    pass
+                if not relay.lines and relay.pending is None:
+                    break
+            relay.close()
+            while True:
+                try:
+                    chunk = os.read(reader, 1 << 20)
+                except BlockingIOError:
+                    break
+                if not chunk:
+                    break
+                out += chunk
+            os.close(reader)
+        got = [line + b"\n" for line in bytes(out).split(b"\n") if line.startswith(b"FB ")]
+        self.assertEqual(got, sent)
+        self.assertGreater(relay.counts["partial"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

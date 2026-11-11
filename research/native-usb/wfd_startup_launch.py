@@ -9,7 +9,7 @@ EXPECTED = {
     "wfd_startup.py": "bb03b53d7761ff06ae1d3ebf475c2d10dabdc5a536500b414a89dc6614c2311c",
     "idc_handshake.py": "6560f0896ffd2e8f81c1a47f02623a67d7496846412aad24c0fd7e6c420c84db",
     "idc.py": "b42bc257c1f8045682636b731a990754048ea954225ccbbbe6dcd8d339e6c2d6",
-    "usb_tunnel.py": "c21fc066271ff90da51d710f0484136a8707be812f75c0f0f4244ef0d8a7367b",
+    "usb_tunnel.py": "e4835e708921672a012be58e19a1fb276301c15a7a26c1e6715d76c108238133",
     "tcp_control.py": "5b7b82c364fc620a1f937c8c377a12191388649ff52c4359efb77b8fce0080e1",
     "idc_capture.py": "b73f0438dfd4a88310dd1e122b4ba4f9584e085af9a71d878d5f37dc2676cfd8",
     "loopback_transfer.py": "a04144f328dc9a626bfa72af093de7105e261484d32a1270cb77a713a5d6ac2f",

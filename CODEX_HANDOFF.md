@@ -9,7 +9,7 @@ This repository is the research project. Data is saved in another container.
 ## Running now
 
 - **Backend machine** runs the runtime subset of research/native-usb plus
-  `dex_probe.py`, the black-screen script and APK, and dexd state. Pins: dexd 82cba96c, kms_daemon_live b0804406, kms_daemon_probe 76da72e6, kms_session_live 94d8e954, direct_gateway 2451bdeb, clipboard_bridge 4471c768, file_bridge 1afc3615, site_env 4787c7ff,
+  `dex_probe.py`, the black-screen script and APK, and dexd state. Pins: dexd 187f3e5b, kms_daemon_live b0804406, kms_daemon_probe 76da72e6, kms_session_live 94d8e954, direct_gateway 2451bdeb, clipboard_bridge 4471c768, file_bridge 1afc3615, site_env 4787c7ff,
   blackscreen.sh 42f65682, tcp_control 5b7b82c3 (full list:
   research/native-usb/MANIFEST.sha256). Rollbacks are kept there as
   `before-*-2026111x`. Time zone, phone serial and sink name come from a local

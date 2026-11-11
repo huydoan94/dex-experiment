@@ -6,6 +6,7 @@ import unittest
 
 from conn_frames import Decoder, Frame, encode
 import tcp_control as tcp
+import usb_tunnel
 from usb_tunnel import Session, Config, Connection, TunnelError
 from test_usb_tunnel import CannedLink, UID
 
@@ -63,7 +64,7 @@ class Tests(unittest.TestCase):
             announce()
         with self.assertRaises(ValueError):
             announce(cfg=1202,key=1033)
-        session.inbound_count=16
+        session.rejected_inbound_keys.update(range(5000,5000+usb_tunnel.MAX_ACTIVE_INBOUND))
         with self.assertRaisesRegex(TunnelError,"count exceeded"):
             announce(key=1034)
         self.assertEqual(len(Decoder(65536).feed(bytes(link.written))),1)
