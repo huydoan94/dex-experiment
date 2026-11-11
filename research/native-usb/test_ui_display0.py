@@ -8,7 +8,8 @@ import ui_confirm_display0 as ui
 from test_ui_confirm import FakeRunner,FOCUS,XML
 from usb_tunnel import TunnelError
 
-CAPTURE = Path(__file__).resolve().parent / "udp-play-after-relisten-20261102T212614+0000"
+# The capture folder keeps its local-time suffix outside the repository: found by prefix.
+CAPTURE = next(Path(__file__).resolve().parent.glob("udp-play-after-relisten-20261102T212614*"), Path("/nonexistent"))
 SAVED = CAPTURE.is_dir()
 
 FOCUS_MULTI=b"  Display: mDisplayId=2 rootTasks=0\n  mCurrentFocus=null\n  Display: mDisplayId=0 rootTasks=3\n"+FOCUS

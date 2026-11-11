@@ -4,7 +4,7 @@ import unittest
 from conn_frames import Decoder, Frame
 import tcp_control as tcp
 
-# Exact frame from loopback-capture-20261102T114115+0000/result.json.
+# Exact frame from the loopback capture of 2026-11-02 (result.json).
 RAW = bytes.fromhex(
     "434f4e4e030000002c000000010000001800000059020000"
     "00000000000000000000000000000000f1030000")

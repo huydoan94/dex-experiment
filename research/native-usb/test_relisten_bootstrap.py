@@ -7,6 +7,8 @@ import app_bootstrap as b
 import relisten_bootstrap as r
 
 D = Path(__file__).resolve().parent / "bootstrap-20261102T055725Z-$"
+# Kept outside the repository with a local-time suffix: found by prefix.
+POST_RELISTEN = next(D.parent.glob("post-relisten-state-20261102T212010*"), D.parent / "post-relisten-state-missing")
 
 
 def saved(name):
@@ -53,8 +55,8 @@ class Tests(unittest.TestCase):
             b.preflight = original
 
     def test_actual_post_play_idle_kms_manager(self):
-        service=json.loads((D.parent/"post-relisten-state-20261102T212010+0000"/"dop-service.json").read_text())["stdout"]
-        desktop=json.loads((D.parent/"post-relisten-state-20261102T212010+0000"/"desktopmode.json").read_text())["stdout"]
+        service=json.loads((POST_RELISTEN/"dop-service.json").read_text())["stdout"]
+        desktop=json.loads((POST_RELISTEN/"desktopmode.json").read_text())["stdout"]
         self.assertEqual(r.preflight_existing(service,desktop),24144)
         for old,new in (
             ("mKMSService=null","mKMSService=active"),
