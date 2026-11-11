@@ -39,6 +39,8 @@ public sealed partial class MainWindow : Window
             if (!windowActive) { Send(controls.ReleaseAll()); controls.Enabled = false; AskPhoneClipboard(); }
             else ShareClipboardWithPhone();
         };
+        AppWindow.Changed += (appWindow, _) =>
+            keepAwake.Minimized(appWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Minimized });
         AppWindow.Closing += (appWindow, args) =>
         {
             if (mediaRunning) { args.Cancel = true; lifetime.Cancel(); }
@@ -47,6 +49,7 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) =>
         {
             CompositionTarget.Rendering -= OnRendering;
+            keepAwake.Streaming(false);
             systemKeys?.Dispose(); systemKeys = null;
             smokeTimer?.Stop();
             telemetryDialog?.Hide();

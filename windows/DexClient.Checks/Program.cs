@@ -117,6 +117,16 @@ Check(FileOffer.ChunkLine(new byte[FileOffer.ChunkBytes]).Length == FileOffer.Ma
     Check(ClientSettings.LoadRendering(settingsPath) == VideoRendering.Hardware, "A damaged settings file falls back to hardware rendering");
     Directory.Delete(Path.GetDirectoryName(settingsPath)!, true);
 }
+{
+    var applied = new List<bool>();
+    var awake = new KeepAwake(applied.Add);
+    awake.Minimized(true); awake.Streaming(true);
+    Check(applied.Count == 0 && !awake.Active, "A minimized window does not keep the PC awake");
+    awake.Minimized(false); awake.Streaming(true);
+    Check(applied.SequenceEqual([true]) && awake.Active, "A streaming session keeps the PC awake, asked once");
+    awake.Minimized(true); awake.Minimized(false); awake.Streaming(false); awake.Streaming(false);
+    Check(applied.SequenceEqual([true, false, true, false]) && !awake.Active, "Minimizing and the session's end release the PC");
+}
 string dropFolder = Path.Combine(Path.GetTempPath(), "dex-checks-" + Guid.NewGuid().ToString("N"));
 using (var drop = new PhoneDrop(dropFolder, 2))
 {

@@ -16,6 +16,7 @@ public sealed partial class MainWindow
     private Task? liveTask;
     private InputWriter? liveWriter;
     private FramePresenter? livePresenter;
+    private readonly KeepAwake keepAwake = new(PowerRequest.Apply);
     // Video rendering (ClientSettings): the shared GPU device when Hardware works, why it
     // does not otherwise, and whether the last shown frame was decoded on the GPU.
     private GpuVideo? gpuVideo;
@@ -245,6 +246,7 @@ public sealed partial class MainWindow
             liveWriter = null; liveCancel.Dispose(); liveCancel = null;
             if (decoding?.IsCompleted != false) session.Closed(generation);
             ConnectButton.IsEnabled = session.State == ConnectionState.Disconnected; DisconnectButton.IsEnabled = false;
+            keepAwake.Streaming(false);
             SetSessionShell(false);
             InputSurface.SetShape(CursorKind.Arrow);
             if (phoneAcceptance)
@@ -330,6 +332,7 @@ public sealed partial class MainWindow
                 InputSurface.Focus(FocusState.Programmatic);
                 if (windowActive) ShareClipboardWithPhone(); // After the cursor opt-in line.
                 firstPicture?.TrySetResult();
+                keepAwake.Streaming(true); // until the session ends (or while minimized)
                 if (syntheticLive || phoneAcceptance)
                 {
                     Send(controls.Move(VideoSurface.ActualWidth / 2, VideoSurface.ActualHeight / 2, VideoSurface.ActualWidth, VideoSurface.ActualHeight));
