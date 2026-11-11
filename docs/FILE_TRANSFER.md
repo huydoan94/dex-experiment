@@ -102,5 +102,8 @@ Implemented in phone_files.py and the client's PhoneDrop / DropMarker
 dropped, "DC" cancelled; back: "DS <count>", "FN <i> <size> <b64 name>",
 "FB <b64>", "FE", "FA", "FX <reason>".
 
-Copying files on the phone and pasting on the PC uses another path (the phone
-does not send URI clips on CLIPBOARD_SHR_REQ); not mapped yet.
+Copying files on the phone and pasting on the PC is not supported by the phone's
+DeX app (2.5.00.16): its clipboard answer (l2/b.o) returns for URI clips, and the
+only sender of its file-list share is the drag-out handler (o2/e.v). Copied rich
+content with an image arrives as HTML plus a ClipboardUrl link to the image; this
+client pastes its plain text only.

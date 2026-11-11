@@ -48,8 +48,8 @@ evidence/results.json, evidence/checks.log, docs/FIXES.md and MANIFEST.sha256.
 - Files phone to PC: drag out works live with client 1.0.1 (1-byte placeholder
   finds the drop folder; files are fetched into it; the phone pointer goes one
   step off-screen while the drag is outside). The placeholder can stay visible
-  during a large copy. A virtual-file drag did not work and was reverted. Phone
-  copy then PC paste not mapped. See docs/FILE_TRANSFER.md.
+  during a large copy. A virtual-file drag did not work and was reverted. Copying
+  files on the phone to paste on the PC is not supported by the phone app. See docs/FILE_TRANSFER.md.
 - Cleanup 2026-11-11 (PLAN-cleanup.md, untracked): experiments, the Python viewer
   and dead tests removed; kms_daemon_live and MainWindow.Live split. Step H measured:
   streaming costs ~16% of the backend machine's CPU; no efficiency change needed.
