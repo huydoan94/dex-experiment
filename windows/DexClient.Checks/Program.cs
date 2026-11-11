@@ -104,6 +104,8 @@ Check(progressOffer.Delivered("S 0 100001 0") == null && progressOffer.Delivered
 Check(offer.Offer(FileOffer.Drag, copied)?.StartsWith("FO 1 ") == true, "Dropped files are always offered");
 Check(offer.Offer(FileOffer.Copy, new[] { (@"C:\x", "..", 1L) }) == null && !FileOffer.IsPlainName("a/b") && !FileOffer.IsPlainName(""), "Bad names are not offered");
 Check(FileOffer.TryParseRequest("G 2 7", out int gFile, out long gChunk) && gFile == 2 && gChunk == 7 && !FileOffer.TryParseRequest("G 2", out _, out _) && !FileOffer.TryParseRequest("C 1002 0", out _, out _), "Chunk requests parse");
+Check(FileOffer.DropLines("5 6", 100) is [(600, "M 9 5 6"), (150, "M 10 5 6")] && FileOffer.DropLines("5 6", 5000)[0].DelayMs == 0
+      && FileOffer.DropLines("5 6", -3)[0].DelayMs == FileOffer.MinDropMs, "A quick drop waits for the phone's drag, then moves and drops");
 Check(FileOffer.ChunkLine(new byte[FileOffer.ChunkBytes]).Length == FileOffer.MaxChunkLine && FileOffer.MaxChunkLine == 2 + 4 * ((49152 + 2) / 3), "Chunk line limit matches the backend");
 string dropFolder = Path.Combine(Path.GetTempPath(), "dex-checks-" + Guid.NewGuid().ToString("N"));
 using (var drop = new PhoneDrop(dropFolder, 2))
