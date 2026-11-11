@@ -25,7 +25,8 @@ public sealed class InputWriter : IAsyncDisposable
             if (closing || Failed) return false;
             foreach (string line in lines)
             {
-                if (line.Length > 64 || line.Contains('\n') || line.Contains('\r')) { failed = true; return false; }
+                if (line.Length > ClipboardLines.LimitFor(line)
+                    || line.Contains('\n') || line.Contains('\r')) { failed = true; return false; }
                 if (line.StartsWith("M 0 ", StringComparison.Ordinal) && queue.Last?.Value.Line.StartsWith("M 0 ", StringComparison.Ordinal) == true)
                 { queue.Last.Value = (line, queue.Last.Value.At); CoalescedMoves++; }
                 else if (queue.Count >= 256) { failed = true; queue.Clear(); return false; }

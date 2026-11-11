@@ -56,13 +56,19 @@ public sealed class PythonSession : IAsyncDisposable
     public bool RequestCursorShapes() => Writer.Send(new[] { CursorShapes.OptIn });
     // Raised on the input reader's thread with each Android pointer type the phone reports.
     public event Action<int>? CursorChanged;
+    // Raised on the input reader's thread with each "V <base64>" phone clipboard line.
+    public event Action<string>? PhoneClipboardLine;
+    // Raised on the input reader's thread with each "G <file> <chunk>" file request line.
+    public event Action<string>? FileRequestLine;
+    // Raised with each "S <file> <bytes> <done>" line: bytes of a file the phone accepted.
+    public event Action<string>? FileProgressLine;
     public long CursorLines { get; private set; }
     private async Task WatchInputAsync(Stream stream, CancellationToken token)
     {
         // Input is full-duplex TLS: this read also detects peer EOF while the
         // independent background writer sends events. After the opt-in the gateway
         // sends only cursor-shape lines; anything else is ignored.
-        var buffer = new byte[256];
+        var buffer = new byte[16384];
         var line = new System.Text.StringBuilder();
         bool discarding = false;
         while (true)
@@ -76,9 +82,13 @@ public sealed class PythonSession : IAsyncDisposable
                 if (c == '\n')
                 {
                     if (!discarding && CursorShapes.TryParse(line.ToString(), out int type)) { CursorLines++; CursorChanged?.Invoke(type); }
+                    else if (!discarding && line.Length > 2 && line[0] == 'V' && line[1] == ' ') PhoneClipboardLine?.Invoke(line.ToString());
+                    else if (!discarding && line.Length > 2 && line[0] == 'G' && line[1] == ' ') FileRequestLine?.Invoke(line.ToString());
+                    else if (!discarding && line.Length > 2 && line[0] == 'S' && line[1] == ' ') FileProgressLine?.Invoke(line.ToString());
                     line.Clear(); discarding = false;
                 }
-                else if (line.Length < 32) line.Append(c);
+                // Cursor lines are short; only a phone clipboard line ("V ...") may be long.
+                else if (line.Length < 32 || (line.Length < ClipboardLines.MaxLength && line[0] == 'V' && line[1] == ' ')) line.Append(c);
                 else discarding = true;
             }
         }

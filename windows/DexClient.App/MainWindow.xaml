@@ -15,7 +15,7 @@
         </Grid.Resources>
         <local:CursorHost x:Name="InputSurface" IsTabStop="True" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                         KeyDown="BackendKeyDown" KeyUp="BackendKeyUp" LostFocus="BackendLostFocus">
-            <Grid x:Name="VideoHost" Background="#0E0F11" MinHeight="240" SizeChanged="VideoHostSizeChanged">
+            <Grid x:Name="VideoHost" Background="#0E0F11" MinHeight="240" SizeChanged="VideoHostSizeChanged" AllowDrop="True" DragEnter="PictureDragEnter" DragOver="PictureDragOver" DragLeave="PictureDragLeave" Drop="PictureDrop">
                 <SwapChainPanel x:Name="VideoSurface" SizeChanged="VideoSurfaceSizeChanged" HorizontalAlignment="Center" VerticalAlignment="Center"
                     PointerMoved="BackendPointerMoved" PointerPressed="BackendPointerPressed"
                     PointerReleased="BackendPointerReleased" PointerWheelChanged="BackendWheel"
@@ -40,8 +40,6 @@
                               ToolTipService.ToolTip="Show the local input position. This does not change the phone cursor." />
                 <ToggleButton x:Name="LowLatencyButton" Content="Low latency" IsChecked="True" Click="ToggleLowLatency" Height="44" CornerRadius="10" BorderThickness="0" Background="Transparent"
                               ToolTipService.ToolTip="Show each picture as soon as it is decoded. Audio keeps its buffer and may trail the picture; turn off to keep sound and picture in sync." />
-                <ToggleButton x:Name="SystemKeysButton" Content="System keys" IsChecked="True" Click="ToggleSystemKeys" Height="44" CornerRadius="10" BorderThickness="0" Background="Transparent"
-                              ToolTipService.ToolTip="Send the Windows key, Alt+Tab, Alt+Esc and Ctrl+Esc to the phone while this window is active. Alt+F4 and Ctrl+Alt+Del stay with this PC." />
                 <Button Content="Telemetry" Click="OpenTelemetry" Style="{StaticResource ToolbarButton}" />
                 <Border Width="1" Height="24" Background="#33373E" Margin="4,0" />
                 <Button x:Name="DisconnectButton" Content="Disconnect" Click="DisconnectBackend" IsEnabled="False" Style="{StaticResource ToolbarButton}" Background="#DC2626" Foreground="White" />
@@ -51,6 +49,13 @@
         <Button x:Name="ToolbarHandle" Visibility="Collapsed" Content="&#xE70D;" FontFamily="Segoe Fluent Icons" Click="ShowToolbar"
                 HorizontalAlignment="Center" VerticalAlignment="Top" Width="72" Height="44" CornerRadius="0,0,12,12" Background="#C716181C" BorderBrush="#2A2D33"
                 AutomationProperties.Name="Show toolbar" ToolTipService.ToolTip="Show toolbar" />
+        <Border x:Name="TransferPanel" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="16,0,16,48" Padding="14,10"
+                CornerRadius="12" Background="#EB16181C" BorderBrush="#2A2D33" BorderThickness="1" IsHitTestVisible="False" MinWidth="320" MaxWidth="560">
+            <StackPanel Spacing="8">
+                <TextBlock x:Name="TransferText" Foreground="#E6E8EB" FontSize="13" TextTrimming="CharacterEllipsis" />
+                <ProgressBar x:Name="TransferBar" Minimum="0" Maximum="100" Height="4" />
+            </StackPanel>
+        </Border>
         <TextBlock x:Name="ConnectionStatus" Text="Disconnected" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="20,16" Foreground="#9BA1AA" IsHitTestVisible="False" MaxWidth="900" TextWrapping="Wrap" />
         <TextBox x:Name="SettingsPath" Text="backend.json" Visibility="Collapsed" />
     </Grid>
