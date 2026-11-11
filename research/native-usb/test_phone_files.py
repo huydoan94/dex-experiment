@@ -138,6 +138,19 @@ class Tests(unittest.TestCase):
         h.bridge.cancel()
         self.assertEqual(h.bridge.state, "idle")
 
+    def test_list_parts_stop_at_the_cap(self):
+        h = Harness()
+        h.bridge.pull()
+        conn = Conn(65534, True, pf.LISTENER_CONFIG)
+        h.phone_event(conn, idc.command_text("SKIN_ACT", "DRAG_START", "EVENT", "1", 5))
+        h.bridge.idc_frames([conn])
+        h.bridge.drop()
+        part = enc((idc.SEP + idc.SEP).join(["http://127.0.0.1:8090/p/%d" % i for i in range(pf.MAX_FILES)]))
+        for _ in range(3):
+            h.bridge.file_list({"SubCmd": "FILELIST_SHR", "Info": part, "FILE_SHR_TIMESTAMP": enc("1")})
+        self.assertEqual(len(h.bridge.files), pf.MAX_FILES)
+        self.assertLessEqual(h.bridge.deadline, h.now)   # full: no wait for more parts
+
     def test_reader_lines(self):
         for line in (b"DP", b"DD", b"DC"):
             self.assertEqual(session.InputReader.parse(line), (line.decode(),))

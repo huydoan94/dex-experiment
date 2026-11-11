@@ -215,12 +215,13 @@ class PhoneFiles:
         self.timestamp = stamp
         items = [item for item in info.split(idc.SEP + idc.SEP) if item.strip()]
         found = file_urls(info)
-        self.files += found
+        self.files = (self.files + found)[:MAX_FILES]   # parts never add up past the cap
         # Shapes only (no names or paths): how many items, how many were files.
         self.log("phone_files_list", items=len(items), files=len(found),
                  http=sum("http://" in item for item in items),
                  query=sum("?" in item for item in items))
-        self.deadline = self.clock() + LIST_QUIET_SECONDS   # more parts may follow
+        # More parts may follow, unless the list is already full.
+        self.deadline = self.clock() + (0 if len(self.files) >= MAX_FILES else LIST_QUIET_SECONDS)
 
     # Periodic work --------------------------------------------------------
     def tick(self, configs):

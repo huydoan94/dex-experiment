@@ -65,8 +65,15 @@ class Tests(unittest.TestCase):
         self.assertEqual(ks.InputReader.parse(b"K d 30"),("K",0,30))
         self.assertEqual(ks.InputReader.parse(b"K u 767"),("K",1,767))
         for line in (b"M 18 1 1",b"K d 0",b"K d 768",
-                     b"K x 30",b"K d 30 ",b"K d -1",b"M 0 1920 0"):
+                     b"K x 30",b"K d 30 ",b"K d -1",b"M 0 1921 0",b"M 0 -2 5",b"M 9 -1 5",b"M 1 1920 5"):
             self.assertIsNone(ks.InputReader.parse(line),line)
+
+    def test_parse_accepts_one_step_past_the_edge_for_moves_only(self):
+        import site_env
+        for x,y in ((-1,500),(500,-1),(1920,500),(500,1080),(-1,-1)):
+            self.assertEqual(ks.InputReader.parse(b"M 0 %d %d"%(x,y)),(0,*site_env.to_desktop(x,y)),(x,y))
+        self.assertLess(site_env.to_desktop(-1,500)[0],0)
+        self.assertGreaterEqual(site_env.to_desktop(1920,500)[0],site_env.desktop_size()[0])
 
     def test_mixed_batch_tracks_keys_and_buttons_in_order(self):
         s=session()
