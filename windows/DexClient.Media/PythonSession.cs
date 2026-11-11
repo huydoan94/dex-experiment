@@ -62,6 +62,8 @@ public sealed class PythonSession : IAsyncDisposable
     public event Action<string>? FileRequestLine;
     // Raised with each "S <file> <bytes> <done>" line: bytes of a file the phone accepted.
     public event Action<string>? FileProgressLine;
+    // Raised with each phone_files line (DS, FN, FB, FE, FA, FX) on the reader thread.
+    public event Action<string>? PhoneFileLine;
     public long CursorLines { get; private set; }
     private async Task WatchInputAsync(Stream stream, CancellationToken token)
     {
@@ -85,14 +87,18 @@ public sealed class PythonSession : IAsyncDisposable
                     else if (!discarding && line.Length > 2 && line[0] == 'V' && line[1] == ' ') PhoneClipboardLine?.Invoke(line.ToString());
                     else if (!discarding && line.Length > 2 && line[0] == 'G' && line[1] == ' ') FileRequestLine?.Invoke(line.ToString());
                     else if (!discarding && line.Length > 2 && line[0] == 'S' && line[1] == ' ') FileProgressLine?.Invoke(line.ToString());
+                    else if (!discarding && IsPhoneFileLine(line)) PhoneFileLine?.Invoke(line.ToString());
                     line.Clear(); discarding = false;
                 }
                 // Cursor lines are short; only a phone clipboard line ("V ...") may be long.
-                else if (line.Length < 32 || (line.Length < ClipboardLines.MaxLength && line[0] == 'V' && line[1] == ' ')) line.Append(c);
+                else if (line.Length < 32 || (line.Length < ClipboardLines.MaxLength && line[0] == 'V' && line[1] == ' ')
+                         || (line.Length < 66000 && line[0] == 'F' && (line[1] == 'B' || line[1] == 'N' || line[1] == 'X'))) line.Append(c);
                 else discarding = true;
             }
         }
     }
+    private static bool IsPhoneFileLine(System.Text.StringBuilder line) =>
+        line.Length >= 2 && ((line[0] == 'D' && line[1] == 'S') || (line[0] == 'F' && line[1] is 'N' or 'B' or 'E' or 'A' or 'X'));
     public async Task MonitorAsync(CancellationToken cancellation)
     {
         while (!cancellation.IsCancellationRequested)
