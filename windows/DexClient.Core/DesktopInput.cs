@@ -64,7 +64,16 @@ public sealed class DesktopInput
         if (!Enabled || !double.IsFinite(px) || !double.IsFinite(py) || !double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0) return [];
         x = Math.Clamp((int)(px * 1920 / width), 0, 1919);
         y = Math.Clamp((int)(py * 1080 / height), 0, 1079);
-        pendingMove = $"M 0 {x} {y}";
+        // Dragging out of the picture with the left button: one step past the edge it
+        // crossed (-1 or 1920/1080), so the phone's drag leaves its screen instead of
+        // resting on whatever lies at the edge (which may show "no drop").
+        int sendX = x, sendY = y;
+        if (buttons.Contains(1))
+        {
+            if (px < 0) sendX = -1; else if (px >= width) sendX = 1920;
+            if (py < 0) sendY = -1; else if (py >= height) sendY = 1080;
+        }
+        pendingMove = $"M 0 {sendX} {sendY}";
         return FlushMove();
     }
     // "x y" in the phone's input space for a file drag/drop point, or null when off the picture.
