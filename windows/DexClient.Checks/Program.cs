@@ -93,6 +93,54 @@ Check(offer.Offer(FileOffer.Drag, copied)?.StartsWith("FO 1 ") == true, "Dropped
 Check(offer.Offer(FileOffer.Copy, new[] { (@"C:\x", "..", 1L) }) == null && !FileOffer.IsPlainName("a/b") && !FileOffer.IsPlainName(""), "Bad names are not offered");
 Check(FileOffer.TryParseRequest("G 2 7", out int gFile, out long gChunk) && gFile == 2 && gChunk == 7 && !FileOffer.TryParseRequest("G 2", out _, out _) && !FileOffer.TryParseRequest("C 1002 0", out _, out _), "Chunk requests parse");
 Check(FileOffer.ChunkLine(new byte[FileOffer.ChunkBytes]).Length == FileOffer.MaxChunkLine && FileOffer.MaxChunkLine == 2 + 4 * ((49152 + 2) / 3), "Chunk line limit matches the backend");
+string dropFolder = Path.Combine(Path.GetTempPath(), "dex-checks-" + Guid.NewGuid().ToString("N"));
+using (var drop = new PhoneDrop(dropFolder, 2))
+{
+    string Name(string n) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(n));
+    Check(drop.Line("FN 0 5 " + Name("a.txt"))?.Text == "Receiving a.txt (1 of 2)", "Phone file header opens a file");
+    Check(drop.Line("FB " + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("hello")))?.Percent == 100, "Phone file bytes advance progress");
+    drop.Line("FE");
+    drop.Line("FN 1 -1 " + Name("../../evil.txt")); drop.Line("FB " + Convert.ToBase64String(new byte[] { 1, 2 })); drop.Line("FE");
+    var final = drop.Line("FA");
+    Check(final?.Final == true && drop.Done && drop.Files.Count == 2, "All phone files received");
+    Check(File.ReadAllText(drop.Files[0]) == "hello" && Path.GetFileName(drop.Files[1]) == "evil.txt" && Path.GetDirectoryName(drop.Files[1]) == dropFolder, "Phone files stay inside the drop folder");
+}
+using (var bad = new PhoneDrop(dropFolder + "-x", 1))
+    Check(bad.Line("FB AAAA")?.Final == true && bad.Error != null && bad.Line("FA") == null, "Data before a header fails the drop");
+Check(PhoneDrop.SafeName("a:b*c?.txt") == "a_b_c_.txt" && PhoneDrop.SafeName("..") == "file", "Phone file names are made safe");
+using (var partial = new PhoneDrop(dropFolder + "-p", 1))
+{
+    partial.Line("FN 0 9 " + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("half.bin"))); partial.Line("FB AAAA");
+    Check(partial.Line("FX phone_closed")?.Final == true && partial.Files.Count == 0 && !File.Exists(Path.Combine(dropFolder + "-p", "half.bin")), "A failed phone file is removed from the drop folder");
+}
+string markerRoot = dropFolder + "-m", markerTarget = Path.Combine(markerRoot, "target", "deeper");
+Directory.CreateDirectory(markerTarget);
+using (var marker = new DropMarker(Path.Combine(markerRoot, "source")))
+{
+    Check(new FileInfo(marker.Source).Length == 1 && marker.Name.StartsWith(DropMarker.Prefix), "The drag placeholder is a 1-byte file");
+    marker.Watch([markerRoot]);
+    var waiting = marker.WaitAsync(TimeSpan.FromSeconds(5));
+    File.Copy(marker.Source, Path.Combine(markerTarget, marker.Name));
+    string? landed = waiting.GetAwaiter().GetResult();
+    Check(landed != null && Path.GetDirectoryName(landed) == markerTarget, "The drop folder is found from the copied placeholder");
+    Task<bool> removing;
+    using (var copying = new FileStream(landed!, FileMode.Open, FileAccess.ReadWrite, FileShare.Delete))
+    {
+        removing = DropMarker.RemoveAsync(landed!);
+        Thread.Sleep(600); // The copy is still running: the placeholder must not go yet.
+        Check(File.Exists(landed) && !removing.IsCompleted, "The placeholder stays while it is being copied");
+    }
+    Check(removing.GetAwaiter().GetResult() && !File.Exists(landed), "The copied placeholder is removed after the copy");
+    string grown = Path.Combine(markerTarget, "keep");
+    File.WriteAllBytes(grown, [1, 2, 3]);
+    Check(!DropMarker.RemoveAsync(grown).GetAwaiter().GetResult() && File.Exists(grown), "A file that grew is never removed");
+}
+using (var lonely = new DropMarker(Path.Combine(markerRoot, "source2")))
+{
+    lonely.Watch([markerRoot]);
+    Check(lonely.WaitAsync(TimeSpan.FromMilliseconds(300)).GetAwaiter().GetResult() == null, "A drop outside any folder finds nothing");
+}
+Directory.Delete(dropFolder, true); Directory.Delete(dropFolder + "-x", true); Directory.Delete(dropFolder + "-p", true); Directory.Delete(markerRoot, true);
 Check(input.Wheel(-120, false).Single() == "M 8 960 540", "Vertical wheel");
 Check(input.Wheel(120, true).Single() == "M 11 960 540", "Horizontal wheel");
 Check(input.Key(0x45, false, true, 0x13).Single() == "K d 119", "Pause mapping");
