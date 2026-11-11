@@ -103,3 +103,12 @@ each area. Raw measurements are kept outside this repository.
 - **2026-11-07 00:08 broken stream** — an agent ran ~50 test modules on the backend machine during a live session; later the same on WSL ran out of memory.
   *Rule:* tests one module per process, memory-capped, never on the backend machine while a
   viewer is attached (the backend machine now has no tests at all).
+- **2026-11-11 "Media decode error" on connect** — after file transfer worked, the
+  phone keeps an idle FileReceiveManager with the last file path and its KMSService
+  object (connection state 0). The relisten guard took both for activity, so a closed
+  phone listener was never reopened and every connection was refused (network error
+  111). The guard now accepts exactly those idle shapes; any active state still refuses.
+- **2026-11-11 phone files arrived empty** — the cursor relay wrote each line with one
+  non-blocking `os.write` and dropped what the FIFO did not take; a 64 KiB `FB` line
+  was cut, so the gateway rejected it. A partly written line now finishes first, and
+  no other line goes inside it.
