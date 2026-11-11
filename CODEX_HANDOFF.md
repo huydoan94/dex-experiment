@@ -43,11 +43,11 @@ evidence/results.json, evidence/checks.log, docs/FIXES.md and MANIFEST.sha256.
 - Phone connect refusal (status 4, error 111): one cause found 2026-11-11, the
   relisten guard refusing the idle state file transfer leaves (fixed, FIXES.md).
 - No physical/optical latency or listening measurement; user feel is the test.
-- Files phone to PC: drag out works live with client v18 (1-byte placeholder
-  finds the drop folder; files are fetched into it). The placeholder can stay
-  visible during a large copy (v19 deletes it sooner, not fully). A virtual-file
-  drag (client v21) did not work and was reverted. Phone copy then PC paste not
-  mapped. See docs/FILE_TRANSFER.md.
+- Files phone to PC: drag out works live with client v23 (1-byte placeholder
+  finds the drop folder; files are fetched into it; the phone pointer goes one
+  step off-screen while the drag is outside). The placeholder can stay visible
+  during a large copy. A virtual-file drag did not work and was reverted. Phone
+  copy then PC paste not mapped. See docs/FILE_TRANSFER.md.
 - Resolution: the phone picks; it gives DeX on PC only 1080p30 (720p60 and
   1080p60 refused, 2026-11-10).
 

@@ -82,6 +82,11 @@ holds whole files.
    folder from where the placeholder was copied, then fetches into that folder and
    removes the placeholder. A virtual-file drag (as Outlook drags attachments) was
    tried and did not work live; the placeholder may stay visible for a while.
+   While the held drag is outside the picture the client moves the phone pointer one
+   step past the edge it crossed (-1, or 1920/1080 in viewer space), so the phone's
+   drag rests over nothing instead of an edge element that shows "no drop". The
+   official PC app instead clamps to the last edge pixel and sends nothing outside
+   (MouseHandler::SendPhoneEvent, PtInRect); the phone injects any coordinate as-is.
 4. The phone registers each file with its HTTP server (port chosen at run time)
    and sends KMS `NOTI FILE_SHR` (`SubCmd FILELIST_SHR`) with `FILE_SHR_TIMESTAMP`
    and `Info`, both base64 of AES (session key) text. `Info` holds
