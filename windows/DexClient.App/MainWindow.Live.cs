@@ -16,6 +16,11 @@ public sealed partial class MainWindow
     private Task? liveTask;
     private InputWriter? liveWriter;
     private FramePresenter? livePresenter;
+    // Video rendering (ClientSettings): the shared GPU device when Hardware works, why it
+    // does not otherwise, and whether the last shown frame was decoded on the GPU.
+    private GpuVideo? gpuVideo;
+    private string? gpuUnavailable;
+    private bool lastFrameGpu;
     private VideoSchedule? videoSchedule;
     private LiveAudio? sessionAudio;
     private PlaybackMetrics? playbackMetrics;
@@ -164,6 +169,11 @@ public sealed partial class MainWindow
             audioAvailable = audio.Available;
             LiveAudio player = audio; sessionAudio = player;
             source = new MeasuredMediaStream(source, metrics);
+            gpuUnavailable = null; lastFrameGpu = false;
+            if (ClientSettings.LoadRendering(ClientSettings.DefaultPath) == VideoRendering.Hardware)
+                gpuVideo = await Task.Run(() => GpuVideo.TryCreate(out gpuUnavailable), token);
+            else gpuUnavailable = "Software rendering is selected";
+            GpuVideo? gpu = gpuVideo;
             decoding = Task.Run(() => LiveDecoder.Decode(source, frame =>
             {
                 Interlocked.Increment(ref decodedFrames); metrics.Mark("decoded");
@@ -172,7 +182,8 @@ public sealed partial class MainWindow
                 else frame.Dispose();
                 if (test) Thread.Sleep(10); // Synthetic pacing only, never in a phone session.
             }, _ => { }, token, reuseVideoBuffers: !baselineTiming,
-                timedAudio: (pts, samples) => { Interlocked.Increment(ref decodedAudioFrames); player.Push(samples, pts); if (inputHiccupCheck) metrics.Mark(playbackPhase + "_audio"); }, measure: metrics.Add), token);
+                timedAudio: (pts, samples) => { Interlocked.Increment(ref decodedAudioFrames); player.Push(samples, pts); if (inputHiccupCheck) metrics.Mark(playbackPhase + "_audio"); }, measure: metrics.Add,
+                gpu: gpu), token);
             if (backend != null) monitoring = backend.MonitorAsync(monitorStop.Token);
             Task startup = firstPicture.Task.WaitAsync(TimeSpan.FromSeconds(120), token);
             Task first = await Task.WhenAny(decoding, startup, monitoring ?? decoding);
@@ -228,6 +239,8 @@ public sealed partial class MainWindow
             int audioTargetEndMs = audio?.TargetMilliseconds ?? 0, audioTargetPeakMs = audio?.PeakTargetMilliseconds ?? 0;
             audio?.Dispose(); sessionAudio = null; livePresenter?.Dispose(); livePresenter = null;
             frames.Dispose(); videoSchedule = null;
+            // After the decoder (it holds the device through FFmpeg) and every queued frame are gone.
+            if (decoding?.IsCompleted != false) { gpuVideo?.Dispose(); gpuVideo = null; }
             long writtenInput = liveWriter?.LinesWritten ?? 0;
             liveWriter = null; liveCancel.Dispose(); liveCancel = null;
             if (decoding?.IsCompleted != false) session.Closed(generation);
@@ -288,17 +301,17 @@ public sealed partial class MainWindow
         {
             using VideoFrame? frame = frames.Take(Stopwatch.GetTimestamp(), sessionAudio?.PositionMicroseconds);
             if (frame == null) return;
-            if (livePresenter == null || frame.Width != frameWidth || frame.Height != frameHeight)
+            if (livePresenter == null || frame.Width != frameWidth || frame.Height != frameHeight || frame.IsGpu != lastFrameGpu)
             {
                 livePresenter?.Dispose();
                 nint panel = ((WinRT.IWinRTObject)VideoSurface).NativeObject.ThisPtr;
-                livePresenter = new FramePresenter(panel, frame.Width, frame.Height, PresentationMode.PreferHardware);
+                livePresenter = new FramePresenter(panel, frame.Width, frame.Height, PresentationMode.PreferHardware, gpu: frame.IsGpu ? gpuVideo : null);
                 frameWidth = frame.Width; frameHeight = frame.Height;
                 LayoutVideo();
                 livePresenter.SetLayoutSize(VideoSurface.ActualWidth, VideoSurface.ActualHeight);
             }
             long presenting = Stopwatch.GetTimestamp();
-            livePresenter.PresentLive(frame); presentedFrames++;
+            livePresenter.PresentLive(frame); presentedFrames++; lastFrameGpu = frame.IsGpu;
             playbackMetrics?.Mark("presented");
             if (inputHiccupCheck) playbackMetrics?.Mark(playbackPhase + "_presented");
             playbackMetrics?.Add("uploadPresent", Stopwatch.GetElapsedTime(presenting).TotalMilliseconds);

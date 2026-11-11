@@ -12,7 +12,8 @@ public static unsafe class LiveDecoder
 {
     public static LiveDecodeResult Decode(Stream source, Action<VideoFrame> video,
                                            Action<byte[]> audio, CancellationToken cancellation, bool reuseVideoBuffers = false,
-                                           Action<long?, byte[]>? timedAudio = null, Action<string, double>? measure = null)
+                                           Action<long?, byte[]>? timedAudio = null, Action<string, double>? measure = null,
+                                           GpuVideo? gpu = null)
     {
         using var input = new StreamingTsInput(source, cancellation);
         using var pool = reuseVideoBuffers ? new VideoBufferPool() : null;
@@ -59,7 +60,7 @@ public static unsafe class LiveDecoder
             AVCodec* codec = null;
             int vi = ffmpeg.av_find_best_stream(format, AVMediaType.AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
             Check(vi);
-            vc = Open(format->streams[vi], codec);
+            vc = Open(format->streams[vi], codec, gpu);
             videoTimeBase = format->streams[vi]->time_base;
             int ai = ffmpeg.av_find_best_stream(format, AVMediaType.AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
             if (ai >= 0)
@@ -140,6 +141,24 @@ public static unsafe class LiveDecoder
                     {
                         if (frame->width <= 0 || frame->height <= 0 || frame->width > 1920 || frame->height > 1080)
                             throw new InvalidDataException("Video exceeds 1080p bounds.");
+                        if (frame->format == (int)AVPixelFormat.AV_PIX_FMT_D3D11)
+                        {
+                            // Decoded on the GPU: keep the texture slice until the frame is shown or dropped.
+                            AVFrame* held = ffmpeg.av_frame_clone(frame);
+                            if (held == null) throw new OutOfMemoryException();
+                            nint heldAt = (nint)held;
+                            var gpuFrame = new VideoFrame(frame->width, frame->height, Array.Empty<byte>(), frame->best_effort_timestamp)
+                            {
+                                PresentationMicroseconds = Timestamp(frame, videoTimeBase),
+                                Texture = (nint)held->data[0], TextureIndex = (int)(nint)held->data[1],
+                                Bt709 = frame->colorspace == AVColorSpace.AVCOL_SPC_BT709,
+                                FullRange = frame->color_range == AVColorRange.AVCOL_RANGE_JPEG,
+                                ReleaseGpu = () => { var f = (AVFrame*)heldAt; ffmpeg.av_frame_free(&f); },
+                            };
+                            try { input.Streaming(); videoFrames++; video(gpuFrame); }
+                            catch { gpuFrame.Dispose(); throw; }
+                            continue;
+                        }
                         long convertingAt = System.Diagnostics.Stopwatch.GetTimestamp();
                         scaler = ffmpeg.sws_getCachedContext(scaler, frame->width, frame->height, (AVPixelFormat)frame->format,
                             frame->width, frame->height, AVPixelFormat.AV_PIX_FMT_BGRA, (int)SwsFlags.SWS_BILINEAR, null, null, null);
@@ -185,13 +204,28 @@ public static unsafe class LiveDecoder
             }
         }
     }
-    private static AVCodecContext* Open(AVStream* stream, AVCodec* codec)
+    // The GPU format whenever the decoder offers it; otherwise FFmpeg's own choice (CPU).
+    private static readonly AVCodecContext_get_format PickFormat = (context, formats) =>
+    {
+        for (var format = formats; *format != AVPixelFormat.AV_PIX_FMT_NONE; format++)
+            if (*format == AVPixelFormat.AV_PIX_FMT_D3D11) return *format;
+        return ffmpeg.avcodec_default_get_format(context, formats);
+    };
+    private static AVCodecContext* Open(AVStream* stream, AVCodec* codec, GpuVideo? gpu = null)
     {
         var context = ffmpeg.avcodec_alloc_context3(codec);
         if (context == null) throw new OutOfMemoryException();
         try
         {
             Check(ffmpeg.avcodec_parameters_to_context(context, stream->codecpar));
+            if (gpu != null && codec->type == AVMediaType.AVMEDIA_TYPE_VIDEO)
+            {
+                context->hw_device_ctx = ffmpeg.av_buffer_ref(gpu.Ffmpeg);
+                if (context->hw_device_ctx == null) throw new OutOfMemoryException();
+                context->get_format = PickFormat;
+                // The schedule may hold this many frames, each keeping a decoder surface.
+                context->extra_hw_frames = Playout.VideoBufferFrames + 2;
+            }
             context->max_pixels = 1920 * 1080;
             context->thread_count = codec->type == AVMediaType.AVMEDIA_TYPE_VIDEO ? Math.Clamp(Environment.ProcessorCount, 1, 4) : 1;
             context->thread_type = ffmpeg.FF_THREAD_SLICE;

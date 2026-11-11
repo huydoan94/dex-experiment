@@ -24,7 +24,17 @@ public sealed unsafe class FramePresenter : IDisposable
     private readonly int width;
     private readonly int height;
 
-    public FramePresenter(nint panelInspectable, int width, int height, PresentationMode mode, Action<string>? trace = null)
+    // GPU frames (GpuVideo): converted by the video processor into the back buffer.
+    private ID3D11VideoDevice? videoDevice;
+    private ID3D11VideoContext1? videoContext;
+    private ID3D11VideoProcessorEnumerator? processors;
+    private ID3D11VideoProcessor? processor;
+    private ID3D11VideoProcessorOutputView? outputView;
+    private nint outputBuffer;
+    private ColorSpaceType inputColors = ColorSpaceType.Reserved;
+    private readonly Dictionary<(nint, int), ID3D11VideoProcessorInputView> inputViews = [];
+
+    public FramePresenter(nint panelInspectable, int width, int height, PresentationMode mode, Action<string>? trace = null, GpuVideo? gpu = null)
     {
         trace?.Invoke("presenter_constructor_enter");
         if (width <= 0 || height <= 0 || width > 1920 || height > 1080)
@@ -38,7 +48,12 @@ public sealed unsafe class FramePresenter : IDisposable
             trace?.Invoke("panel_query_start");
             Marshal.ThrowExceptionForHR(Marshal.QueryInterface(panelInspectable, in iid, out panel));
             trace?.Invoke("panel_queried");
-            if (mode == PresentationMode.PreferHardware)
+            if (gpu != null && mode == PresentationMode.PreferHardware)
+            {
+                device = gpu.Device.QueryInterface<ID3D11Device>(); // shared with the decoder, own reference
+                Driver = "Hardware";
+            }
+            if (device == null && mode == PresentationMode.PreferHardware)
             {
                 try
                 {
@@ -126,12 +141,63 @@ public sealed unsafe class FramePresenter : IDisposable
     public void PresentLive(VideoFrame frame)
     {
         ObjectDisposedException.ThrowIf(swapChain == null, this);
+        if (frame.IsGpu) { PresentGpu(frame); return; }
         if (frame.Width != width || frame.Height != height || frame.Bgra.Length != checked(width * height * 4))
             throw new ArgumentException("Frame geometry differs from the surface.");
         using var buffer = swapChain!.GetBuffer<ID3D11Texture2D>(0);
         context!.UpdateSubresource(frame.Bgra, buffer, 0, (uint)(width * 4), 0);
         swapChain.Present(0, PresentFlags.None).CheckError();
         Presents++;
+    }
+
+    private void PresentGpu(VideoFrame frame)
+    {
+        if (frame.Width != width || frame.Height != height) throw new ArgumentException("Frame geometry differs from the surface.");
+        if (processor == null)
+        {
+            videoDevice = device!.QueryInterface<ID3D11VideoDevice>();
+            videoContext = context!.QueryInterface<ID3D11VideoContext1>();
+            var description = GpuVideo.Content(width, height);
+            videoDevice.CreateVideoProcessorEnumerator(ref description, out processors).CheckError();
+            videoDevice.CreateVideoProcessor(processors, 0, out processor).CheckError();
+            videoContext.VideoProcessorSetStreamFrameFormat(processor, 0, VideoFrameFormat.Progressive);
+            videoContext.VideoProcessorSetStreamAutoProcessingMode(processor, 0, false);
+            videoContext.VideoProcessorSetOutputColorSpace1(processor, ColorSpaceType.RgbFullG22NoneP709);
+        }
+        using var back = swapChain!.GetBuffer<ID3D11Texture2D>(0);
+        if (outputView == null || back.NativePointer != outputBuffer)
+        {
+            outputView?.Dispose();
+            videoDevice!.CreateVideoProcessorOutputView(back, processors!,
+                new VideoProcessorOutputViewDescription { ViewDimension = VideoProcessorOutputViewDimension.Texture2D }, out outputView).CheckError();
+            outputBuffer = back.NativePointer;
+        }
+        var key = (frame.Texture, frame.TextureIndex);
+        if (!inputViews.TryGetValue(key, out var input))
+        {
+            if (inputViews.Count >= 64) ClearInputViews(); // the decoder made a new surface pool
+            Marshal.AddRef(frame.Texture); // the wrapper releases its own reference
+            using var texture = new ID3D11Texture2D(frame.Texture);
+            videoDevice!.CreateVideoProcessorInputView(texture, processors!, new VideoProcessorInputViewDescription
+            {
+                ViewDimension = VideoProcessorInputViewDimension.Texture2D,
+                Texture2D = new Texture2DVideoProcessorInputView { ArraySlice = (uint)frame.TextureIndex },
+            }, out input).CheckError();
+            inputViews[key] = input;
+        }
+        var colors = frame.FullRange
+            ? frame.Bt709 ? ColorSpaceType.YcbcrFullG22LeftP709 : ColorSpaceType.YcbcrFullG22LeftP601
+            : frame.Bt709 ? ColorSpaceType.YcbcrStudioG22LeftP709 : ColorSpaceType.YcbcrStudioG22LeftP601;
+        if (colors != inputColors) { videoContext!.VideoProcessorSetStreamColorSpace1(processor, 0, colors); inputColors = colors; }
+        videoContext!.VideoProcessorBlt(processor, outputView!, 0, 1, [new VideoProcessorStream { Enable = true, InputSurface = input }]).CheckError();
+        swapChain.Present(0, PresentFlags.None).CheckError();
+        Presents++;
+    }
+
+    private void ClearInputViews()
+    {
+        foreach (var view in inputViews.Values) view.Dispose();
+        inputViews.Clear();
     }
 
     private void SetSwapChain(nint value)
@@ -147,6 +213,12 @@ public sealed unsafe class FramePresenter : IDisposable
         finally
         {
             if (panel != 0) { Marshal.Release(panel); panel = 0; }
+            ClearInputViews();
+            outputView?.Dispose(); outputView = null;
+            processor?.Dispose(); processor = null;
+            processors?.Dispose(); processors = null;
+            videoContext?.Dispose(); videoContext = null;
+            videoDevice?.Dispose(); videoDevice = null;
             swapChain?.Dispose(); swapChain = null;
             context?.ClearState();
             context?.Flush();

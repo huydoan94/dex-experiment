@@ -107,6 +107,16 @@ Check(FileOffer.TryParseRequest("G 2 7", out int gFile, out long gChunk) && gFil
 Check(FileOffer.DropLines("5 6", 100) is [(600, "M 9 5 6"), (150, "M 10 5 6")] && FileOffer.DropLines("5 6", 5000)[0].DelayMs == 0
       && FileOffer.DropLines("5 6", -3)[0].DelayMs == FileOffer.MinDropMs, "A quick drop waits for the phone's drag, then moves and drops");
 Check(FileOffer.ChunkLine(new byte[FileOffer.ChunkBytes]).Length == FileOffer.MaxChunkLine && FileOffer.MaxChunkLine == 2 + 4 * ((49152 + 2) / 3), "Chunk line limit matches the backend");
+{
+    string settingsPath = Path.Combine(Path.GetTempPath(), "dex-settings-" + Guid.NewGuid().ToString("N"), "settings.json");
+    Check(ClientSettings.LoadRendering(settingsPath) == VideoRendering.Hardware, "Hardware video rendering is the default");
+    Check(ClientSettings.SaveRendering(settingsPath, VideoRendering.Software) && ClientSettings.LoadRendering(settingsPath) == VideoRendering.Software
+          && ClientSettings.SaveRendering(settingsPath, VideoRendering.Hardware) && ClientSettings.LoadRendering(settingsPath) == VideoRendering.Hardware,
+          "The video rendering choice is saved and read back");
+    File.WriteAllText(settingsPath, "{ not json");
+    Check(ClientSettings.LoadRendering(settingsPath) == VideoRendering.Hardware, "A damaged settings file falls back to hardware rendering");
+    Directory.Delete(Path.GetDirectoryName(settingsPath)!, true);
+}
 string dropFolder = Path.Combine(Path.GetTempPath(), "dex-checks-" + Guid.NewGuid().ToString("N"));
 using (var drop = new PhoneDrop(dropFolder, 2))
 {

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using DexClient.Core;
 using DexClient.Media;
 using Microsoft.UI;
 using Microsoft.UI.Text;
@@ -93,7 +94,18 @@ public sealed partial class MainWindow
         }
         var done = new Button { Content = "Close", Height = 44, Padding = new Thickness(20, 0, 20, 0), CornerRadius = new CornerRadius(10), Background = Brush(0x22252B),
             BorderBrush = Brush(0x33373E), BorderThickness = new Thickness(1), Foreground = Brush(0xF1F3F5), HorizontalAlignment = HorizontalAlignment.Right };
-        var body = new StackPanel { Spacing = 18, HorizontalAlignment = HorizontalAlignment.Stretch, Children = { header, latencyCard, stats, done } };
+        // Video rendering: saved per user, used from the next connection (switching decoders
+        // mid-stream would need a new keyframe from the phone).
+        var rendering = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 40,
+            Items = { "Hardware (GPU)", "Software (CPU)" },
+            SelectedIndex = ClientSettings.LoadRendering(ClientSettings.DefaultPath) == VideoRendering.Software ? 1 : 0 };
+        AutomationProperties.SetName(rendering, "Video rendering");
+        var renderingNote = new TextBlock { Text = "Applies from the next connection.", FontSize = 12, Foreground = Brush(0x9BA1AA) };
+        rendering.SelectionChanged += (_, _) =>
+            renderingNote.Text = ClientSettings.SaveRendering(ClientSettings.DefaultPath, rendering.SelectedIndex == 1 ? VideoRendering.Software : VideoRendering.Hardware)
+                ? "Saved. Applies from the next connection." : "Couldn't save the setting.";
+        var renderingCard = Card(new StackPanel { Spacing = 6, Children = { Label("Video rendering"), rendering, renderingNote } }, 10, new Thickness(14, 12, 14, 12));
+        var body = new StackPanel { Spacing = 18, HorizontalAlignment = HorizontalAlignment.Stretch, Children = { header, latencyCard, stats, renderingCard, done } };
 
         var samples = new Queue<double>();
         var clock = Stopwatch.StartNew();
@@ -124,7 +136,11 @@ public sealed partial class MainWindow
             values[2].Text = lastAt > 0 ? Rate(media?.BytesIn, lastMedia?.BytesIn) : "—";
             values[3].Text = lastAt > 0 ? Rate(input?.BytesOut + media?.BytesOut, lastInput?.BytesOut + lastMedia?.BytesOut) : "—";
             values[4].Text = videoSchedule is { } schedule ? schedule.Dropped.ToString("N0") : "—";
-            values[5].Text = "H.264 · AAC · software";
+            string decode = presentedFrames == 0 ? "—" : lastFrameGpu ? "GPU" : "CPU";
+            string display = livePresenter?.Driver switch { "Hardware" => "GPU", "WARP" => "WARP (CPU)", _ => "—" };
+            values[5].Text = $"H.264 · AAC\nDecode {decode} · display {display}";
+            ToolTipService.SetToolTip(values[5], gpuVideo is { } gpu && lastFrameGpu ? gpu.Adapter
+                : gpuUnavailable is { } reason ? "Not on the GPU: " + reason : livePresenter?.Adapter);
             values[6].Text = sessionAudio is { } player ? $"{player.BufferedMilliseconds} ms · target {player.TargetMilliseconds}" : audioAvailable ? "—" : "No output device";
             values[7].Text = media != null ? "Direct TLS" : "—";
             lastPresented = presentedFrames; lastMedia = media; lastInput = input; lastAt = now;
