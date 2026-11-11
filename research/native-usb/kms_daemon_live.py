@@ -30,6 +30,8 @@ import time
 import clipboard_bridge
 import duplex_link
 import file_bridge
+import idc
+import phone_files
 from threaded_input import ThreadedInputReader,_DISCONNECT as DISCONNECT
 import kms_input_live
 import kms_session_live as base
@@ -859,7 +861,9 @@ class CursorRelay:
         # short "G <file> <chunk>" requests for the viewer, in order.
         self.file_messages=[]
         self.lines=deque()
+        self.line_started=False
         self.seen=[]
+        self.share_messages=[]
 
     def clip(self,text):
         line=b"V "+base64.b64encode(text.encode("utf-8"))+b"\n"
@@ -900,6 +904,9 @@ class CursorRelay:
         if isinstance(message,dict):
             # Names only (diagnostics for file transfer); never parameters.
             self.seen.append("%s %s"%(str(message.get("TYPE"))[:8],str(message.get("MSG"))[:40]))
+        if isinstance(message,dict) and message.get("MSG")=="FILE_SHR":
+            self.share_messages.append(message)
+            return
         if isinstance(message,dict) and message.get("MSG")=="InitFileTransfer" and message.get("TYPE")=="RESP":
             self.file_messages.append(message)
             return
@@ -938,15 +945,24 @@ class CursorRelay:
                 self.fd=fd
             try:
                 # A cursor line never goes inside a partly written clipboard line.
-                if self.pending is not None and not self.clip_started:
+                if self.pending is not None and not self.clip_started and not self.line_started:
                     os.write(self.fd,b"C %d %d\n"%self.pending)
                     self.counts["sent"]+=1
                     self.last_sent,self.pending=self.pending,None
+                # A file line can be 64 KiB: the FIFO may take part of it; the rest goes
+                # first next time, before any other line.
                 while self.lines and not self.clip_started:
-                    os.write(self.fd,self.lines[0])
+                    head=self.lines[0]
+                    count=os.write(self.fd,head)
+                    if count<len(head):
+                        self.lines[0]=head[count:]
+                        self.line_started=True
+                        self.counts["partial"]+=1
+                        return
                     self.lines.popleft()
+                    self.line_started=False
                     self.counts["lines_sent"]+=1
-                while self.clip_out:
+                while self.clip_out and not self.line_started:
                     count=os.write(self.fd,bytes(self.clip_out[:65536]))
                     del self.clip_out[:count]
                     self.clip_started=bool(self.clip_out)
@@ -963,6 +979,9 @@ class CursorRelay:
                 # The next reader must not start inside a half-written line.
                 if self.clip_started:
                     self.clip_out,self.clip_started=bytearray(),False
+                if self.line_started:
+                    self.lines.popleft()
+                    self.line_started=False
                 return
         except OSError as error:
             self.error=type(error).__name__
@@ -1288,6 +1307,18 @@ class DaemonSession(base.SessionInput):
                         files.phone_response(message)
                 except TunnelError as error:
                     files.viewer_failed("send: "+str(error)[:80])
+        pulled=getattr(self,"phone_files",None)
+        if pulled is not None:
+            try:
+                pulled.idc_frames(self.connections.values())
+                while self.cursor.share_messages:
+                    pulled.file_list(self.cursor.share_messages.pop(0))
+                pulled.tick(self.configs)
+            except TunnelError as error:
+                try:
+                    pulled._fail("tunnel: "+str(error)[:60])
+                except TunnelError:
+                    pulled.state="idle"
         self.cursor.flush()
 
     def _clipboard_bridge(self):
@@ -1357,7 +1388,56 @@ class DaemonSession(base.SessionInput):
         self.next_file_host=port+100
         return self.connect(port,config_id=file_bridge.FILE_CONFIG,timeout_s=2)
 
+    def _phone_files(self):
+        if getattr(self,"phone_files",None) is None:
+            key=getattr(self,"idc_key",None)
+            if key is None or getattr(self,"cursor",None) is None:
+                return None
+            self.phone_files=phone_files.PhoneFiles(
+                key,self._idc_text,self._open_http,
+                lambda connection,data: self.send(connection,data,timeout_s=2),self._close_quietly,
+                self.cursor.line,lambda: sum(len(line) for line in self.cursor.lines)+len(self.cursor.clip_out),
+                self.log)
+            self.phone_files.prime(self.connections.values())
+        return self.phone_files
+
+    def _idc_text(self,main,sub,kind,info):
+        seq=getattr(self,"idc_seq",1000)
+        self.idc_seq=seq+1 if seq<32760 else 1000
+        self._idc_command(idc.encode(self.idc_key,idc.command_text(main,sub,kind,info,seq)))
+
+    def _open_http(self,port,configs):
+        """A fresh connection to the phone's file server port (one tunnel config per port)."""
+        ports=getattr(self,"http_ports",{})
+        self.http_ports=ports
+        if port not in ports:
+            ports[port]=phone_files.HTTP_CONFIG_FIRST+len(ports)
+            self.open_config(ports[port],SERVICE_UID,port,timeout_s=2)
+        host=getattr(self,"next_http_host",phone_files.HTTP_HOST_FIRST)
+        self.next_http_host=host+1
+        return self.connect(host,config_id=ports[port],timeout_s=2)
+
+    def _close_quietly(self,connection):
+        try:
+            self.disconnect(connection,timeout_s=1)
+        except TunnelError:
+            pass
+
     def _clipboard(self,events):
+        drag=[event for event in events if event[0] in ("DP","DD","DC")]
+        if drag:
+            events=[event for event in events if event[0] not in ("DP","DD","DC")]
+            bridge=self._phone_files()
+            for event in drag:
+                if bridge is None:
+                    self.dropped["phone_files"]+=1
+                    continue
+                try:
+                    {"DP":bridge.pull,"DD":bridge.drop,"DC":bridge.cancel}[event[0]]()
+                except TunnelError as error:
+                    self.log("phone_files_error",error=str(error)[:80])
+        if not events:
+            return
         files=[event for event in events if event[0] in ("FO","B","BX","FC")]
         if files:
             events=[event for event in events if event[0] not in ("FO","B","BX","FC")]
@@ -1502,6 +1582,8 @@ class DaemonSession(base.SessionInput):
             result["kms_input"]["clipboard"]=self.clipboard.summary()
         if getattr(self,"files",None) is not None:
             result["kms_input"]["files"]=self.files.summary()
+        if getattr(self,"phone_files",None) is not None:
+            result["kms_input"]["phone_files"]=self.phone_files.summary()
         timing=getattr(self,"usb_timing",None)
         if timing is not None:
             result["usb_timing"]=timing.summary()

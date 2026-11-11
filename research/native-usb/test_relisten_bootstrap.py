@@ -79,8 +79,8 @@ class Tests(unittest.TestCase):
             ("mReceiveStatus=0","mReceiveStatus=2"),
             ("mReceiveStatus=0","mReceiveStatus=-1"),
             ("mReceiveStatus=0","unknownStatus=0"),
-            ("mFinalFileURI=null","mFinalFileURI=/storage/a"),
             ("mFinalFileURI=null","mFinalFileURI=null\n      extra=unknown"),
+            ("mFinalFileURI=null","unknownField=null"),
             ("Current n state:","Current n state: no instance\n\n    Current n state:"),
             ("Current n state:","Current unknown state:"),
             ("mKMSService=null","mKMSService=active"),
@@ -89,6 +89,16 @@ class Tests(unittest.TestCase):
         ):
             with self.subTest(new=new),self.assertRaises(ValueError):
                 r.preflight_existing(service.replace(old,new),desktop)
+        for kms in ("mKMSService=active", "mKMSService=com.sec.android.app.dexonpc.kms.source.KMSService@zz",
+                    "mKMSService=other.KMSService@1a2b"):
+            with self.subTest(kms=kms), self.assertRaises(ValueError):
+                r.preflight_existing(service.replace("mKMSService=null", kms), desktop)
+        with self.assertRaises(ValueError):
+            r.preflight_existing(service.replace("mKMSService=null", "mKMSService=com.sec.android.app.dexonpc.kms.source.KMSService@78bea54")
+                                 .replace("mKMSServiceState=0", "mKMSServiceState=1"), desktop)
+        # Idle after file transfer: the phone keeps its KMSService object and the last file's path.
+        self.assertEqual(r.preflight_existing(service.replace("mKMSService=null", "mKMSService=com.sec.android.app.dexonpc.kms.source.KMSService@78bea54"), desktop), 24144)
+        self.assertEqual(r.preflight_existing(service.replace("mFinalFileURI=null","mFinalFileURI=/storage/a/b.docx"),desktop),24144)
 
     def test_main_installs_wrapper_and_keeps_default_plan_only(self):
         original = b.preflight

@@ -4,6 +4,7 @@ import unittest
 
 from conn_frames import Decoder, Frame, encode
 import tcp_control as tcp
+import usb_tunnel
 from usb_tunnel import Session, TunnelError
 from test_multi_config import MultiPhone
 from test_usb_tunnel import UID
@@ -134,16 +135,28 @@ class Tests(unittest.TestCase):
     def test_inbound_limit_and_identifier_exhaustion(self):
         phone = TransferPhone()
         session = opened(phone)
-        session.inbound_count = 16
+        for port in range(40000, 40000 + usb_tunnel.MAX_ACTIVE_INBOUND):
+            session.connections[port] = usb_tunnel.Connection(5000 + port, port, config_id=601, inbound=True)
         frame = Frame(3, 1, 24, struct.pack("<I16sI", 601, bytes(16), 2000))
         with self.assertRaisesRegex(TunnelError, "count exceeded"):
             session._phone_request(frame)
-        session.inbound_count = 0
+        session.connections.clear()
         session.retired.update({port: None for port in range(60000, 65536)})
         with self.assertRaisesRegex(TunnelError, "identifiers exhausted"):
             session._phone_request(frame)
         self.assertFalse(session.connections)
         self.assertIsNone(phone.inbound_ack)
+
+    def test_closed_inbound_connections_do_not_count(self):
+        # The phone opens one short-lived connection per IDC event: a long session sees many.
+        phone = TransferPhone()
+        session = opened(phone)
+        for key in range(3000, 3000 + 3 * usb_tunnel.MAX_ACTIVE_INBOUND):
+            session._phone_request(Frame(3, 1, 24, struct.pack("<I16sI", 601, bytes(16), key)))
+            accepted = next(c for c in session.connections.values() if c.key == key)
+            accepted.closed_by_phone = True
+        self.assertEqual(session.inbound_count, 3 * usb_tunnel.MAX_ACTIVE_INBOUND)
+        self.assertEqual(session._active_inbound(), 0)
 
     def test_ack_rejects_invalid_identifiers(self):
         for args in ((0, 601, 60000), (24, 0, 60000), (24, 601, 0), (24, 601, 65536)):

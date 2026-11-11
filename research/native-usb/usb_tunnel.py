@@ -22,6 +22,10 @@ from conn_frames import Decoder, encode
 import tcp_control as tcp
 
 READ_CHUNK_BYTES = 16384
+# Phone-initiated connections open at once (a safety bound, not a protocol limit).
+# The phone opens a short-lived connection per IDC event, so a lifetime total
+# would end long sessions; connections the phone has closed do not count.
+MAX_ACTIVE_INBOUND = 16
 WRITE_TIMEOUT_MS = 1000
 LOOPBACK = '127.0.0.1'
 # Reference daemon connection keys come from a counter that wraps before 0xfffa.
@@ -175,7 +179,8 @@ class Session:
             if self.cleanup:
                 listeners |= self.retired_listeners
             message = tcp.inbound_connect_message(frame, listeners)
-            if self.inbound_count >= 16:
+            if (self._active_inbound() >= MAX_ACTIVE_INBOUND
+                    or len(self.rejected_inbound_keys) >= MAX_ACTIVE_INBOUND):
                 raise TunnelError("inbound connection count exceeded")
             if (any(c.key == message.connection_key for c in self.connections.values())
                     or message.connection_key in self.retired.values()
@@ -246,6 +251,9 @@ class Session:
     def _require_config(self):
         if not self.configs or self.usb_buffer_bytes is None:
             raise TunnelError('no open configuration')
+
+    def _active_inbound(self):
+        return sum(1 for c in self.connections.values() if c.inbound and not c.closed_by_phone)
 
     def _retire(self, connection):
         self.connections.pop(connection.host_port, None)

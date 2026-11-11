@@ -187,6 +187,12 @@ class GatewayTests(unittest.TestCase):
             finally:os.close(cursor_fd)
             self.until(lambda:self.server.active.counts['file_requests']==1 and self.server.active.counts['file_progress']==1 and self.server.active.counts['cursor_dropped']==3)
         finally:os.close(input_fd)
+    def test_phone_file_lines_pass_and_bad_ones_drop(self):
+        from direct_gateway import Pair
+        ok=[b'DS 2',b'FE',b'FA',b'FX no_file_list',b'FN 0 3 b25lLnR4dA==',b'FN 1 -1 YQ==',b'FB '+base64.b64encode(b'x'*49152)]
+        bad=[b'DS x',b'FX bad reason!',b'FN 0 3 not*b64',b'FB '+base64.b64encode(b'x'*49155),b'FE 1',b'FZ']
+        for line in ok:self.assertTrue(Pair.phone_file_line(line.split(b' '),line),line[:20])
+        for line in bad:self.assertFalse(Pair.phone_file_line(line.split(b' '),line),line[:20])
     def test_opt_in_before_the_daemon_reads_input_does_not_stall_the_session(self):
         # 2026-11-06 v7 session A: an older gateway ended a session whose early opt-in
         # could not drain into a not-yet-read input FIFO. The opt-in never enters the FIFO.

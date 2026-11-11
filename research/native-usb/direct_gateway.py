@@ -34,6 +34,8 @@ CURSOR_LINE_BYTES = 16
 # The same return path carries the phone's clipboard text as one 'V <base64>' line
 # (clipboard_bridge; at most 131072 characters of UTF-8).
 CLIP_LINE_BYTES = 2 + 4*((4*131072+2)//3)
+# phone_files: a dragged-out file's bytes, "FB <base64 of at most 49152 bytes>".
+CHUNK_LINE_BYTES = 3 + 4*((49152+2)//3)
 BASE64 = frozenset(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
 
 
@@ -59,7 +61,7 @@ class Pair:
         self.worker = None
         self.created = time.monotonic()
         self.reason = None
-        self.counts = {'media_bytes': 0, 'input_bytes': 0, 'cursor_lines': 0, 'cursor_dropped': 0, 'clipboard_lines': 0, 'file_requests': 0, 'file_progress': 0}
+        self.counts = {'media_bytes': 0, 'input_bytes': 0, 'cursor_lines': 0, 'cursor_dropped': 0, 'clipboard_lines': 0, 'file_requests': 0, 'file_progress': 0, 'phone_file_lines': 0}
 
     def attach(self, role, sock):
         with self.lock:
@@ -189,7 +191,8 @@ class Pair:
         """Complete, well-formed cursor lines from the session; anything else is dropped."""
         self.cursor_buffer += data
         *lines, rest = self.cursor_buffer.split(b'\n')
-        limit = CLIP_LINE_BYTES if rest.startswith(b'V ') else CURSOR_LINE_BYTES
+        limit = (CLIP_LINE_BYTES if rest.startswith(b'V ') else CHUNK_LINE_BYTES if rest.startswith(b'FB ')
+                 else CURSOR_LINE_BYTES * 8 if rest.startswith(b'FN ') else CURSOR_LINE_BYTES)
         self.cursor_buffer = bytearray(rest[-limit:])
         kept = []
         for line in lines:
@@ -206,6 +209,9 @@ class Pair:
                 # file_bridge asks the viewer for the next chunk of a file.
                 kept.append(line+b'\n')
                 self.counts['file_requests'] += 1
+            elif self.phone_file_line(parts, line):
+                kept.append(line+b'\n')
+                self.counts['phone_file_lines'] += 1
             elif (len(parts) == 4 and parts[0] == b'S' and all(p.isdigit() for p in parts[1:])
                     and len(parts[1]) <= 4 and len(parts[2]) <= 15 and parts[3] in (b'0', b'1')):
                 # file_bridge reports bytes of a file the phone has accepted.
@@ -214,6 +220,24 @@ class Pair:
             else:
                 self.counts['cursor_dropped'] += 1
         return b''.join(kept)
+
+    @staticmethod
+    def phone_file_line(parts, line):
+        """phone_files lines: DS <count>, FN <i> <size> <b64 name>, FB <b64>, FE, FA, FX <reason>."""
+        kind = parts[0]
+        if kind in (b'FE', b'FA'):
+            return len(parts) == 1
+        if kind == b'DS':
+            return len(parts) == 2 and parts[1].isdigit() and len(parts[1]) <= 4
+        if kind == b'FX':
+            return len(parts) == 2 and 0 < len(parts[1]) <= 60 and parts[1].replace(b'_', b'').replace(b'-', b'').isalnum()
+        if kind == b'FB':
+            return len(parts) == 2 and len(line) <= CHUNK_LINE_BYTES and BASE64.issuperset(parts[1])
+        if kind == b'FN':
+            return (len(parts) == 4 and parts[1].isdigit() and len(parts[1]) <= 4
+                    and (parts[2].isdigit() or parts[2] == b'-1') and len(parts[2]) <= 15
+                    and len(parts[3]) <= 400 and BASE64.issuperset(parts[3]))
+        return False
 
     def input(self):
         sock = self.sockets['input']
