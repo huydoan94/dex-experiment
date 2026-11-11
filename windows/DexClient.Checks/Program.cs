@@ -37,6 +37,18 @@ var refused = false;
 try { session.BeginConnect(); }
 catch (InvalidOperationException) { refused = true; }
 Check(refused, "Second connect refused");
+{
+    string[] Edge(double px, double py, bool held)
+    {
+        var edge = new DesktopInput { Enabled = true };
+        if (held) edge.Button(1, true);
+        return edge.Move(px, py, 100, 50);
+    }
+    Check(Edge(-5, 25, true).Single() == "M 0 -1 540" && Edge(150, 25, true).Single() == "M 0 1920 540"
+          && Edge(50, -3, true).Single() == "M 0 960 -1" && Edge(50, 60, true).Single() == "M 0 960 1080" && Edge(-5, -5, true).Single() == "M 0 -1 -1",
+          "A held drag leaving the picture goes one step past the edge it crossed");
+    Check(Edge(-5, 25, false).Single() == "M 0 0 540" && Edge(150, 60, false).Single() == "M 0 1919 1079", "Without a held button the pointer stays on the picture");
+}
 var input = new DesktopInput();
 Check(input.Move(10, 10, 100, 100).Length == 0, "No pointer before picture");
 Check(input.Key(0x1e, false, true).Length == 0, "No key before picture");
@@ -108,6 +120,19 @@ using (var drop = new PhoneDrop(dropFolder, 2))
 using (var bad = new PhoneDrop(dropFolder + "-x", 1))
     Check(bad.Line("FB AAAA")?.Final == true && bad.Error != null && bad.Line("FA") == null, "Data before a header fails the drop");
 Check(PhoneDrop.SafeName("a:b*c?.txt") == "a_b_c_.txt" && PhoneDrop.SafeName("..") == "file", "Phone file names are made safe");
+Check(PhoneDrop.SafeName("con.txt") == "_con.txt" && PhoneDrop.SafeName("NUL") == "_NUL" && PhoneDrop.SafeName("Com1.tar.gz") == "_Com1.tar.gz"
+      && PhoneDrop.SafeName("console.txt") == "console.txt" && PhoneDrop.SafeName("COM10") == "COM10", "Windows device names never become phone file names");
+using (var oversize = new PhoneDrop(dropFolder + "-b", 1))
+{
+    oversize.Line("FN 0 2 " + Convert.ToBase64String("x"u8.ToArray())); oversize.Line("FB " + Convert.ToBase64String("abc"u8.ToArray()));
+    Check(oversize.Error != null && oversize.Files.Count == 0, "A phone file longer than its size fails and is removed");
+}
+using (var extra = new PhoneDrop(dropFolder + "-e", 1))
+{
+    extra.Line("FN 0 1 " + Convert.ToBase64String("a"u8.ToArray())); extra.Line("FB " + Convert.ToBase64String("a"u8.ToArray())); extra.Line("FE");
+    extra.Line("FN 1 1 " + Convert.ToBase64String("b"u8.ToArray()));
+    Check(extra.Error != null && extra.Files.Count == 1, "More files than the phone offered are refused");
+}
 using (var partial = new PhoneDrop(dropFolder + "-p", 1))
 {
     partial.Line("FN 0 9 " + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("half.bin"))); partial.Line("FB AAAA");
@@ -141,6 +166,7 @@ using (var lonely = new DropMarker(Path.Combine(markerRoot, "source2")))
     Check(lonely.WaitAsync(TimeSpan.FromMilliseconds(300)).GetAwaiter().GetResult() == null, "A drop outside any folder finds nothing");
 }
 Directory.Delete(dropFolder, true); Directory.Delete(dropFolder + "-x", true); Directory.Delete(dropFolder + "-p", true); Directory.Delete(markerRoot, true);
+Directory.Delete(dropFolder + "-b", true); Directory.Delete(dropFolder + "-e", true);
 Check(input.Wheel(-120, false).Single() == "M 8 960 540", "Vertical wheel");
 Check(input.Wheel(120, true).Single() == "M 11 960 540", "Horizontal wheel");
 Check(input.Key(0x45, false, true, 0x13).Single() == "K d 119", "Pause mapping");

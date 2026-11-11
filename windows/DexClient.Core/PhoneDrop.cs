@@ -33,6 +33,7 @@ public sealed class PhoneDrop : IDisposable
             {
                 if (current == null) return Fail("data before a file");
                 var data = Convert.FromBase64String(line[3..]);
+                if (currentSize >= 0 && written + data.Length > currentSize) return Fail("more data than the file's size");
                 current.Write(data);
                 written += data.Length;
                 return (Receiving(), currentSize > 0 ? Math.Min(100, 100d * written / currentSize) : null, false);
@@ -41,6 +42,7 @@ public sealed class PhoneDrop : IDisposable
             {
                 var parts = line.Split(' ');
                 if (parts.Length != 4 || !long.TryParse(parts[2], out currentSize)) return Fail("bad file header");
+                if (Files.Count >= Expected) return Fail("more files than the phone offered");
                 currentName = SafeName(Encoding.UTF8.GetString(Convert.FromBase64String(parts[3])));
                 string path = Unique(Path.Combine(Folder, currentName));
                 current?.Dispose();
@@ -77,8 +79,16 @@ public sealed class PhoneDrop : IDisposable
         name = name[(name.LastIndexOf('/') + 1)..];
         foreach (char c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
         name = name.Trim(' ', '.');
-        return name.Length == 0 ? "file" : name.Length > 200 ? name[..200] : name;
+        name = name.Length == 0 ? "file" : name.Length > 200 ? name[..200] : name;
+        // Windows device names (CON, NUL, COM1, ...) are not files, with or without an extension.
+        string stem = name.Split('.')[0].TrimEnd(' ');
+        return Reserved.Contains(stem) ? "_" + name : name;
     }
+
+    private static readonly HashSet<string> Reserved = new(
+        ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+         .. Enumerable.Range(0, 10).SelectMany(i => new[] { $"COM{i}", $"LPT{i}" }),
+         "COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³"], StringComparer.OrdinalIgnoreCase);
 
     private static string Unique(string path)
     {

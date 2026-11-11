@@ -490,7 +490,13 @@ public sealed partial class MainWindow
                 copied = await marker.WaitAsync(TimeSpan.FromSeconds(5));
         }
         catch (Exception) { } // No drag: the phone is told below.
-        finally { marker?.Dispose(); phoneDragActive = false; }
+        finally
+        {
+            marker?.Dispose(); phoneDragActive = false;
+            // The phone shows "no drop" while its own drag crosses something, then hands
+            // the drag to Windows and never sends a shape again: back to the arrow.
+            if (lastCursorType == 1012) { InputSurface.SetShape(CursorKind.Arrow); lastCursorType = 1000; }
+        }
         if (copied == null || Path.GetDirectoryName(copied) is not string folder) { Send(["DC"]); return; }
         await ReceivePhoneFilesAsync(count, folder, DropMarker.RemoveAsync(copied));
     }
@@ -502,8 +508,16 @@ public sealed partial class MainWindow
         phoneDropDone = new TaskCompletionSource<List<string>?>(TaskCreationOptions.RunContinuationsAsynchronously);
         ShowTransfer("Getting files from the phone", null, false);
         Send(["DD"]);
+        var drop = phoneDrop;
         var done = await Task.WhenAny(phoneDropDone.Task, Task.Delay(TimeSpan.FromMinutes(10)));
-        if (done != phoneDropDone.Task) ShowTransfer("Couldn't receive files from the phone: no answer", null, true);
+        if (done != phoneDropDone.Task)
+        {
+            // Late lines must not keep writing into the folder: this transfer is over.
+            if (phoneDrop == drop) phoneDrop = null;
+            drop.Dispose();
+            Send(["DC"]);
+            ShowTransfer("Couldn't receive files from the phone: no answer", null, true);
+        }
         await placeholderRemoved;
     }
     private DispatcherQueueTimer? transferHide;
