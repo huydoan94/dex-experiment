@@ -11,7 +11,19 @@ public sealed class VideoFrame(int width, int height, byte[] bgra, long timestam
     public long Timestamp { get; } = timestamp;
     public long? PresentationMicroseconds { get; init; }
     internal Action<byte[]>? Recycle;
-    public void Dispose() => Interlocked.Exchange(ref Recycle, null)?.Invoke(Bgra);
+    // A GPU frame (GpuVideo): no pixels in Bgra; the decoder's texture array and slice
+    // stay held until Dispose. Bt709/FullRange describe its YCbCr for the conversion.
+    public nint Texture { get; init; }
+    public int TextureIndex { get; init; }
+    public bool Bt709 { get; init; }
+    public bool FullRange { get; init; }
+    public bool IsGpu => Texture != 0;
+    internal Action? ReleaseGpu;
+    public void Dispose()
+    {
+        Interlocked.Exchange(ref Recycle, null)?.Invoke(Bgra);
+        Interlocked.Exchange(ref ReleaseGpu, null)?.Invoke();
+    }
 }
 public sealed record DecodeResult(int Frames, int Width, int Height, VideoFrame LastFrame);
 
