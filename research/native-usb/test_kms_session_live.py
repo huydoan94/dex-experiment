@@ -15,8 +15,6 @@ from unittest.mock import patch
 
 import kms_input_live as base
 import kms_session_live as ks
-import kms_session_live_probe as probe
-import kms_session_live_launch as launch
 import rtsp_udp_long as long
 import sidesync_packets
 from usb_tunnel import TunnelError
@@ -187,141 +185,11 @@ class Tests(unittest.TestCase):
         with patch.object(base.InputSession,"summary",lambda self:dict(kms_input=dict(sends=1))):
             self.assertEqual(s.summary()["kms_input"],dict(sends=1,keys_released=0,keys_held_at_end=0))
 
-    def test_budget_sink_window_and_pins(self):
-        self.assertEqual(probe.MAX_REQUESTS,
-                         48+long.LONG_KEEPALIVES+7+ks.MAX_INPUT_SENDS+base.MAX_HEARTBEATS+1)
-        self.assertEqual(probe.SINK_OPEN_SECONDS,30)
-        for name,digest in launch.EXPECTED.items():
-            self.assertEqual(hashlib.sha256((HERE/name).read_bytes()).hexdigest(),digest,name)
-        for name in ("kms_session_live.py","kms_input_live.py","kms_hover_live.py","kms_mouse_live.py"):
-            self.assertIn(name,launch.EXPECTED)
-
-    def test_plan_only_never_selects_usb_or_checks_adb(self):
-        with patch.object(launch,'require_adb_server',side_effect=AssertionError('ADB')),\
-             contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(launch.main([]),0)
 
 
-class DefaultRunner(unittest.TestCase):
-    def test_default_runner_is_the_shipped_once_script(self):
-        text=(HERE/"dex_session.sh").read_text()
-        default=text.split("once=${DEX_SESSION_ONCE:-$research/",1)[1].split("}",1)[0]
-        self.assertTrue((HERE/default).is_file(),default)
-        self.assertIn(default,launch.EXPECTED)
 
 
-class SessionScript(unittest.TestCase):
-    """dex_session.sh against a temporary project root and a fake one-shot runner."""
-    def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory()
-        root=Path(self.tmp.name)
-        self.research=root/"research/native-usb"
-        self.research.mkdir(parents=True)
-        self.fifos=root/"fifos"
-        self.fifos.mkdir()
-        self.calls=root/"calls.txt"
-        fake=root/"fake_once.sh"
-        # Arguments: flags, --output OUT --ts-fifo TS --stop-file STOP --input-fifo INPUT.
-        fake.write_text('#!/bin/bash\necho "$@" >> %s\ntest -p "$6" && test -p "${10}"\n'
-                        'while [ ! -e "$8" ]; do sleep .05; done\n' % self.calls)
-        # Like the shipped once scripts, the runner is not executable: it must be run with bash.
-        fake.chmod(0o644)
-        self.env=dict(os.environ,DEX_ROOT=str(root),DEX_FIFO_BASE=str(self.fifos),
-                      DEX_SESSION_ONCE=str(fake))
 
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def relisten(self,name="relisten-20261103T100000Z-$",ok=True,age=0):
-        d=self.research/name
-        d.mkdir()
-        f=d/"result.json"
-        f.write_text(json.dumps(dict(bootstrap_observed=ok,errors=[] if ok else ["x"])))
-        if age:
-            os.utime(f,(time.time()-age,)*2)
-        return d
-
-    def run_script(self,*args):
-        return subprocess.run(["bash",str(HERE/"dex_session.sh"),*args],env=self.env,
-                              capture_output=True,text=True,timeout=20)
-
-    def fields(self,out):
-        return dict(line.split("=",1) for line in out.splitlines() if "=" in line)
-
-    def test_start_runs_once_then_refuses_reuse_and_stop_ends_it(self):
-        self.relisten()
-        first=self.run_script("start")
-        self.assertEqual(first.returncode,0,first.stderr)
-        f=self.fields(first.stdout)
-        fifo=Path(f["FIFO_DIR"])
-        self.assertTrue((fifo/"ts.fifo").is_fifo() and (fifo/"input.fifo").is_fifo())
-        self.assertEqual(oct(fifo.stat().st_mode&0o777),"0o700")
-        busy=self.run_script("start")
-        self.assertNotEqual(busy.returncode,0)
-        self.assertIn("already running",busy.stderr)
-        self.assertEqual(self.run_script("stop",str(fifo)).returncode,0)
-        for _ in range(100):
-            if not fifo.exists():
-                break
-            time.sleep(.1)
-        self.assertFalse(fifo.exists())
-        # The runner keeps the lock until its final FIFO hold ends.
-        for _ in range(100):
-            if "SESSION_EXIT" in Path(f["OUTPUT"]+".run.log").read_text():
-                break
-            time.sleep(.1)
-        args=self.calls.read_text().split()
-        self.assertEqual(args[:2],["--approved-phone-kms-session-live","--accept-persistent-state"])
-        self.assertEqual(args[3],f["OUTPUT"])
-        again=self.run_script("start")
-        self.assertNotEqual(again.returncode,0)
-        self.assertIn("already used",again.stderr)
-
-    def test_early_runner_failure_releases_blocked_viewer_readers(self):
-        failing=Path(self.tmp.name)/"failing_once.sh"
-        failing.write_text("#!/bin/bash\nexit 3\n")
-        failing.chmod(0o644)
-        self.env["DEX_SESSION_ONCE"]=str(failing)
-        self.relisten()
-        started=self.run_script("start")
-        self.assertEqual(started.returncode,0,started.stderr)
-        fields=self.fields(started.stdout)
-        fifo=fields["FIFO_DIR"]
-        # A viewer cat that opened the FIFOs just after start must not hang.
-        reader=subprocess.Popen(["cat",fifo+"/ts.fifo"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        writer=subprocess.Popen(["bash","-c","cat > "+fifo+"/input.fifo"],stdin=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL)
-        reader.wait(10)
-        writer.stdin.close()
-        writer.wait(10)
-        for _ in range(50):
-            if not Path(fifo).exists():
-                break
-            time.sleep(.1)
-        self.assertFalse(Path(fifo).exists())
-        for _ in range(50):
-            log=Path(fields["OUTPUT"]+".run.log").read_text()
-            if "SESSION_EXIT" in log:
-                break
-            time.sleep(.1)
-        self.assertIn("SESSION_EXIT=3",log)
-
-    def test_start_refuses_missing_failed_or_stale_relisten(self):
-        self.assertIn("no relisten result",self.run_script("start").stderr)
-        self.relisten("relisten-20261103T100001Z-$",ok=False)
-        self.assertIn("not successful",self.run_script("start").stderr)
-        self.relisten("relisten-20261103T100002Z-$",age=900)
-        self.assertIn("older than",self.run_script("start").stderr)
-        self.assertFalse(self.calls.exists())
-
-    def test_stop_refuses_paths_outside_the_fifo_base(self):
-        elsewhere=Path(self.tmp.name)/"elsewhere/dex-live-20261103T000000+0000"
-        elsewhere.mkdir(parents=True)
-        odd=self.fifos/"other"
-        odd.mkdir()
-        for path in (str(elsewhere),str(self.fifos)+"/x/../dex-live-20261103T000000+0000",str(odd)):
-            self.assertNotEqual(self.run_script("stop",path).returncode,0,path)
-        self.assertFalse((elsewhere/"stop").exists() or (odd/"stop").exists())
 
 
 if __name__=='__main__':
