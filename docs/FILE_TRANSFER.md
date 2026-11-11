@@ -77,13 +77,25 @@ holds whole files.
    and answers IDC `SKIN_ACT DRAG_START EVENT <count>` on its own connection to
    the PC's IDC listener; otherwise it injects a cancel.
 3. The PC starts a Windows drag; on the drop it sends IDC `SKIN_ACT DRAG_DROP`.
+   This client drags a 1-byte placeholder (`phoneFileCopy-<hex>`) so no drop target
+   waits for the phone (Explorer asks for the data while hovering), finds the drop
+   folder from where the placeholder was copied, then fetches into that folder and
+   removes the placeholder. A virtual-file drag (as Outlook drags attachments) was
+   tried and did not work live; the placeholder may stay visible for a while.
 4. The phone registers each file with its HTTP server (port chosen at run time)
    and sends KMS `NOTI FILE_SHR` (`SubCmd FILELIST_SHR`) with `FILE_SHR_TIMESTAMP`
    and `Info`, both base64 of AES (session key) text. `Info` holds
-   `http://<phone>:<port>/<path>` URLs joined by `/&%/&%`, up to 100 per message;
-   a folder list starts with `!@#$%<parent>`.
-5. The PC downloads each URL over the tunnel, then sends IDC `FILE_SHR_FINISH`
+   registration ids joined by `/&%/&%`, up to 100 per message:
+   `[mime type]http://<phone>:<port>/<encoded path>[?ttl=<title>&fn=<name>&size=<n>]`
+   (title and name unencoded); a folder list starts with `!@#$%<parent>`.
+5. The PC downloads each path over the tunnel (the body is XORed with 9 unless the
+   PC is a Mac), then sends IDC `FILE_SHR_FINISH`
    whose info ends with `,<timestamp>`; the phone then stops serving.
+
+Implemented in phone_files.py and the client's PhoneDrop / DropMarker
+(2026-11-11; works live with client v18/v19). Viewer lines: "DP" pull, "DD"
+dropped, "DC" cancelled; back: "DS <count>", "FN <i> <size> <b64 name>",
+"FB <b64>", "FE", "FA", "FX <reason>".
 
 Copying files on the phone and pasting on the PC uses another path (the phone
 does not send URI clips on CLIPBOARD_SHR_REQ); not mapped yet.
