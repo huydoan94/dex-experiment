@@ -17,7 +17,7 @@ This repository is the research project. Data is saved in another container.
   `before-*-2026111x`. Time zone, phone serial and sink name come from a local
   config file read by dexd; without it, logs are UTC and the single attached
   phone is used.
-- **Client**: 1.1.0 packaged
+- **Client**: 1.2.0 packaged
   (build from `windows/`; earlier test builds were 0.0.x and are only in git).
 - **Behaviour**: async USB in/out, scrambled RTP with descrambling, pause on
   disconnect / resume on connect (10 s reply / 30 s video timeouts fall back to
@@ -45,7 +45,7 @@ evidence/results.json, evidence/checks.log, docs/FIXES.md and MANIFEST.sha256.
 - Phone connect refusal (status 4, error 111): one cause found 2026-11-11, the
   relisten guard refusing the idle state file transfer leaves (fixed, FIXES.md).
 - No physical/optical latency or listening measurement; user feel is the test.
-- Files phone to PC: drag out works live with client 1.1.0 (1-byte placeholder
+- Files phone to PC: drag out works live with client 1.2.0 (1-byte placeholder
   finds the drop folder; files are fetched into it; the phone pointer goes one
   step off-screen while the drag is outside). The placeholder can stay visible
   during a large copy. A virtual-file drag did not work and was reverted. Copying
@@ -56,6 +56,8 @@ evidence/results.json, evidence/checks.log, docs/FIXES.md and MANIFEST.sha256.
 - Video: 1.1.0 decodes and converts on the GPU (D3D11VA + video processor) with a
   CPU fallback; Telemetry shows the path and has the Hardware/Software switch.
   Confirmed on the user's PC. Dropped frames not yet compared between the modes.
+- Keep-awake: 1.2.0 holds the display and system awake while a session shows a
+  picture (released when it ends or the window is minimized); confirmed live.
 - Resolution: the phone picks; it gives DeX on PC only 1080p30 (720p60 and
   1080p60 refused, 2026-11-10).
 

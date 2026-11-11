@@ -43,7 +43,8 @@ FFmpeg D3D11VA decoding and the presenter's video processor, so frames stay on
 the GPU, and falls back to the CPU when the GPU cannot; Software decodes and
 converts on the CPU. Either way D3D presents (WARP without a GPU). WASAPI 20 ms with an adaptive audio buffer (starts 40 ms, grows on
 underrun up to 160 ms, shrinks after quiet stretches). "Low latency" (default on)
-shows the newest picture at once. Input: ordered bounded queue, hover coalescing,
+shows the newest picture at once. While a session shows a picture the client keeps the
+PC awake (SetThreadExecutionState), released when it ends or is minimized. Input: ordered bounded queue, hover coalescing,
 release on focus loss. Gateway marks client traffic DSCP 41.
 
 ## Machines and access
