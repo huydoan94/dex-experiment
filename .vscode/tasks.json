@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Set up .venv",
+      "detail": "Create .venv if missing and install requirements.txt",
+      "type": "shell",
+      "command": "test -x .venv/bin/python || python3 -m venv .venv; .venv/bin/python -m pip install -r requirements.txt",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}
