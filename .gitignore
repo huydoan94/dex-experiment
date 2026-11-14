@@ -1,6 +1,4 @@
 # Never commit.
-local settings
-a command log
 archive/
 releases/
 *.zip

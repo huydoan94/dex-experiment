@@ -31,17 +31,15 @@ Short rules learned the hard way. The stories behind them are in
 
 ## Working safely
 
-- the backend machine has few resources: never run heavy work there while a viewer is
-  attached. Tests run on WSL, one module per process, memory-capped
-  (`ulimit -v`, `timeout`); a 50-module run broke a stream on the backend and ran WSL out
-  of memory.
+- The backend machine is small: never run heavy work there while a viewer is
+  attached. Tests run in the workspace, one module per process, memory-capped
+  (`ulimit -v`, `timeout`); a 50-module run broke a stream on the backend and ran
+  the workspace out of memory.
 - Verify by hash before deleting or moving, and keep the original until the copy
   is checked.
 - Choose log tags, time window and encoding deliberately; empty filtered output
   does not prove there was no error.
 - Report results honestly; a clean later run does not prove an older failure
   was fixed.
-- the Windows build machine's share maps the DOS Archive attribute to execute: set Archive on
-  build outputs to run them there. 
 - Phone logs at debug level are invisible; add backend log lines for each
   protocol step before the next live attempt instead of guessing.

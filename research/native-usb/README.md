@@ -1,6 +1,6 @@
 # Python backend (source and tests; runtime subset on the backend machine)
 
-Complete backend folder. the backend machine (`<backend-project>/research/native-usb`) runs
+Complete backend folder. The backend machine runs
 only the Runtime group below (plus dexd state). Locked 2026-11-07 after the user accepted async OUT ("input feel very snappy").
 `MANIFEST.sha256` lists every file here; the backend machine's runtime files match their lines. The runtime pins are `EXPECTED` in `dexd.py`.
 
@@ -17,7 +17,7 @@ Descrambler, AsyncIn/AsyncOut USB, sink, cursor relay, input wake),
 `direct_gateway.py` (TLS 7443, DSCP 41, cursor relay), `threaded_input.py`.
 
 Tests: run **one module per process**, memory-capped (docs/LESSONS.md), never on
-the backend machine while a session streams. 19 older modules fail identically on WSL and backend
+the backend machine while a session streams. 19 older modules fail identically in the workspace and on the backend
 because their capture folders were archived on 2026-11-06 (e.g.
 `query-20261101T171251Z/`); the daemon suites `test_daemon_recorder`,
 `test_dexd`, `test_kms_daemon_live` all pass.

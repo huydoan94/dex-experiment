@@ -100,7 +100,8 @@ each area. Raw measurements are kept outside this repository.
 
 - **2026-11-07 02:19 stream drop** — the phone rebooted for an OMC software
   update (`reboot,omcupdate`); the backend recovered by itself in ~3.5 min.
-- **2026-11-07 00:08 broken stream** — an agent ran ~50 test modules on the backend machine during a live session; later the same on WSL ran out of memory.
+- **2026-11-07 00:08 broken stream** — an agent ran ~50 test modules on the backend
+  during a live session; later the same in the workspace ran out of memory.
   *Rule:* tests one module per process, memory-capped, never on the backend machine while a
   viewer is attached (the backend machine now has no tests at all).
 - **2026-11-11 "Media decode error" on connect** — after file transfer worked, the
@@ -120,6 +121,6 @@ each area. Raw measurements are kept outside this repository.
   sessions (`dexd/file-transfer-id`).
 - **2026-11-11 SmartScreen "Windows protected your PC" on client 1.1.0** — from
   1.0.0 the packages shipped a newly built launcher exe (its version resource
-  changed); unsigned and started from a share, each new exe was unknown to
+  changed); unsigned, each new exe was unknown to
   SmartScreen. 1.1.0 ships the launcher every earlier package used, and packages
   keep it from now on.

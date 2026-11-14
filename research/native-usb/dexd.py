@@ -1,14 +1,14 @@
-"""dexd: the DeX pipeline in the backend machine (dexd.service, User=dex; 77-DEXD_PIPELINE.md, revised).
+"""dexd: the DeX pipeline on the backend machine (dexd.service, User=dex; 77-DEXD_PIPELINE.md, revised).
 
 One backend run serves one viewer (user 2026-11-03):
 1. on backend start, find
    the single phone (vvvv:pppp), check the source pins, and run
-   reconnect_relisten.sh once with the backend machine start as its epoch, inside
+   reconnect_relisten.sh once with the backend start as its epoch, inside
    DeX's indication window. That only reopens the phone's one-shot listener;
    DeX is not connected yet;
 2. wait until a viewer holds RUN/viewer.lock (the direct gateway, for the client);
    Before waiting, the black-screen app is started if absent: the phone screen is
-   black whenever the phone is in the backend machine (user 2026-11-03), DeX or not;
+   black whenever the phone is attached to the backend (user 2026-11-03), DeX or not;
 3. run ONE session (kms_daemon_probe) for it;
 4. when the session ends (viewer gone, KMS closed or an error), write a request
    in REQUEST_DIR to replug
