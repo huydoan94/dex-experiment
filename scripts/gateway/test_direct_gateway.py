@@ -86,6 +86,35 @@ class GatewayTests(unittest.TestCase):
         self.server.context.wrap_socket=recording
         c=self.connect('probe');self.assertEqual(self.line(c)['status'],'authenticated')
         self.assertEqual(marks,[41<<2])
+    def closed_within(self,s,seconds):
+        s.settimeout(seconds)
+        try:self.assertEqual(s.recv(1),b'')
+        except ConnectionResetError:pass
+    def test_slow_greeting_is_cut_at_one_total_deadline(self):
+        self.server.greeting_seconds=1
+        context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT);context.check_hostname=False;context.verify_mode=ssl.CERT_NONE
+        s=context.wrap_socket(socket.create_connection(self.server.server_address),server_hostname='localhost');self.clients.append(s)
+        try:
+            for byte in b'{"version": 1, "ro':
+                s.sendall(bytes([byte]));time.sleep(.2)   # each byte well inside a per-read timeout
+        except OSError:pass
+        self.closed_within(s,1)   # 1.6 s of drip: only a total deadline has closed it
+        self.until(lambda:not self.server.preauth)
+        c=self.connect('probe');self.assertEqual(self.line(c)['status'],'authenticated')
+    def test_stalled_tls_handshake_is_cut(self):
+        self.server.greeting_seconds=.5
+        raw=socket.create_connection(self.server.server_address);self.clients.append(raw)
+        self.closed_within(raw,3)
+        self.until(lambda:not self.server.preauth)
+    def test_one_address_cannot_hold_every_slot_before_auth(self):
+        idle=[socket.create_connection(self.server.server_address) for _ in range(4)];self.clients.extend(idle)
+        self.until(lambda:self.server.preauth.get('127.0.0.1')==4)
+        extra=socket.create_connection(self.server.server_address);self.clients.append(extra)
+        self.closed_within(extra,2)
+        for s in idle:s.close()
+        self.until(lambda:not self.server.preauth)
+        c=self.connect('probe');self.assertEqual(self.line(c)['status'],'authenticated')
+        self.until(lambda:not self.server.preauth)
     def test_bad_token_cannot_start_session(self):
         c=self.connect('media',token='incorrect');self.assertEqual(c.recv(1),b'');self.locks_free();self.assertIsNone(self.server.active)
     def test_partial_pair_disconnect_releases_admission_without_fifo_claim(self):
