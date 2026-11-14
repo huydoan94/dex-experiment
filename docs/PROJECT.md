@@ -49,45 +49,32 @@ release on focus loss. Gateway marks client traffic DSCP 41.
 
 ## Machines and access
 
-| Where | What | Rules |
-| --- | --- | --- |
-| WSL (this project) | docs, evidence, backend source + tests, client source, exports, research tools | 3.9 GB RAM |
-| the backend machine `<backend-host>` `<backend-project>` | running backend only (runtime files, deps `tools/crypto-root`, `tools/usb-root`, dexd state) | small |
-| Windows build machine (Windows 10 x64) | client build/test workspace in the the build folder folder (the build folder) | all build machine files there |
-
-Admin access only through the private lab tools
-(pinned SSH; every backend command is appended to a private command log). Run
-the private lab tools after a backend batch. SSH settings live in the untracked
-the private settings; never print or commit them.
-Physical Windows and the virtualization host hosts are off limits.
+The backend runs on a small Linux machine attached to the phone; the client is
+built and tested on Windows. Which machines, how they are reached, their limits
+and the lab tools are in a private lab guide outside this repository.
 
 ## Changing the backend
 
 1. Edit in `research/native-usb/` here, update the pin in `dexd.py`.
 2. Test here, **one module per process**, memory-capped (see LESSONS): the daemon
    suites are `test_daemon_recorder`, `test_dexd`, `test_kms_daemon_live`.
-   the backend machine has no tests any more (runtime only).
-3. Copy the changed runtime files to backend `efficiency-20261106/candidate-*` and run
+   The backend machine runs no tests (runtime only).
+3. Stage the changed runtime files beside the running ones and run
    `dexd.check_pins()` against them there (light; only while no viewer).
 4. Swap during a streaming session (the running session keeps the old code; the
-   next cycle loads the new pins), keeping a `before-*` backup. Swap only runtime
-   files; tests stay here.
+   next cycle loads the new pins), keeping a backup. Swap only runtime files;
+   tests stay here.
 5. Verify the next session's `result.json`, then record it in
    `evidence/results.json`, `evidence/checks.log`, and a line in `docs/FIXES.md`.
 
 ## Client build and package
 
-Build on the Windows build machine in the build folder, package with
-the private packaging scripts (update the expected hashes there). the lab runner maps the
-folder for each SSH session and sets `the build folder`; the scripts refuse to run without
-it. The folder is a share that maps the DOS Archive attribute to the execute bit;
-files written by MSBuild lack it and fail with "Access is denied". After a
-build, set Archive on the outputs (`$_.Attributes = $_.Attributes -bor 'Archive'`). The standalone ZIP
+Build `windows/` on Windows x64 with the .NET 10 SDK. The standalone package
 bundles the runtime, `backend.json` and the token (`gateway-token`).
 Keep the launcher `DexClient.App.exe` unchanged between releases (copy only the
-app DLLs, `.pri` and `.xbf`): it is unsigned and runs from a network share, so
-every new exe build makes SmartScreen ask again. The version lives in the app
-DLL (`<Version>` in DexClient.App.csproj); the launcher's own file version stays 1.0.0.0.
+app DLLs, `.pri` and `.xbf`): it is unsigned, so every new exe build makes
+SmartScreen ask again. The version lives in the app DLL (`<Version>` in
+DexClient.App.csproj); the launcher's own file version stays 1.0.0.0.
 Local gateway regression: `python3 scripts/gateway/test_direct_gateway.py`.
 Docs check: `python3 scripts/session-preflight.py`.
 Pins: after editing a pinned backend file, `python3 scripts/pins.py` refreshes

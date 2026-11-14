@@ -1,4 +1,4 @@
-# Install in the backend machine as root (user action; 77-DEXD_PIPELINE.md):
+# Install on the backend machine as root (user action; 77-DEXD_PIPELINE.md):
 #   install -m 644 /home/dex/dex-experiment/research/native-usb/dexd.service /etc/systemd/system/
 #   systemctl daemon-reload && systemctl enable dexd.service
 # Starts at every backend start; the host restarts the backend machine on every phone USB event.

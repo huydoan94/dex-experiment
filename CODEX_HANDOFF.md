@@ -17,8 +17,12 @@ This repository is the research project. Data is saved in another container.
   `before-*-2026111x`. Time zone, phone serial and sink name come from a local
   config file read by dexd; without it, logs are UTC and the single attached
   phone is used.
-- **Client**: 1.2.0 packaged
-  (build from `windows/`; earlier test builds were 0.0.x and are only in git).
+- **Client**: 1.3.0 packaged (focus click and Alt+Tab not sent, hover sent while
+  inactive; UI-tested without a phone, not yet tried live); 1.2.0 is the last one
+  the user ran. Build from `windows/`.
+- **Backend pins**: comments reworded 2026-11-14 (no code change; dexd 14d06f4d in
+  the repository). The backend machine still runs the earlier files until the next
+  deploy (stage, idle, then the user restarts it).
 - **Behaviour**: async USB in/out, scrambled RTP with descrambling, pause on
   disconnect / resume on connect (10 s reply / 30 s video timeouts fall back to
   TEARDOWN + replug), replug after a session ends, pointer shapes, input wake,
@@ -63,7 +67,5 @@ evidence/results.json, evidence/checks.log, docs/FIXES.md and MANIFEST.sha256.
 
 ## Environment
 
-SSH helpers in the private lab tools read their settings from the untracked
-the private settings. Append backend
-commands to a private command log. Backend machine: small,
-Python 3.13. Workspace: ~3.9 GB RAM, so tests run one module per process.
+Lab machines, access and tools: the private lab guide outside this repository.
+Tests run here, one module per process, memory-capped.

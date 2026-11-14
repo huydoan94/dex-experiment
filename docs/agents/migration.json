@@ -55,7 +55,7 @@
     "docs/LESSONS.md",
     "docs/FIXES.md"
    ],
-   "acceptance": "No manual-readiness reinvention or competing USB owner. Preserve guarded confirmation, normal shutdown and the existing supervisor/backend lifecycle.",
+   "acceptance": "No manual-readiness reinvention or competing USB owner. Preserve guarded confirmation, normal shutdown and the existing supervisor/container lifecycle.",
    "next_action": "Preserve the Python protocol behavior and saved lessons. C implementation and tests are dropped; no C migration work is pending."
   },
   {
@@ -112,7 +112,7 @@
     "evidence/results.json",
     "docs/LESSONS.md"
    ],
-   "acceptance": "Continuous live H264/AAC and input through the existing Python backend, native presentation/audio/focus loss, bounded shutdown and subsequent-session reuse. Synthetic build machine reports cannot establish live phone acceptance.",
+   "acceptance": "Continuous live H264/AAC and input through the existing Python backend, native presentation/audio/focus loss, bounded shutdown and subsequent-session reuse. Synthetic test machine reports cannot establish live phone acceptance.",
    "next_action": "Current user export DexClient-Windows-x64-20261106-0.0.7-standalone.zip (not in this repository) (SHA256 7e6f9d9c...66ca). Physical display/latency acceptance remains open; 0.0.3-0.0.6 exports are superseded."
   },
   {
@@ -287,7 +287,7 @@
   "live_check_waiting_for": null,
   "phone_plan_execution": "Completed one session; broad grant persists, no further session scheduled.",
   "authorization": "User broad remaining-work grant persists. Last direct session completed after user confirmed Disconnected and closed. No further session scheduled. Explain complete bounds before any new live action.",
-  "documentation": "Local and remote consolidation completed2026-11-06. Backend C candidates/toolchain removed; Python pins/runtime preserved. build machine obsolete exports/prototypes removed; current app/ZIP and51 source hashes verified. Remote cleanup metadata in evidence/results.json.",
+  "documentation": "Local and remote consolidation completed2026-11-06. Backend C candidates/toolchain removed; Python pins/runtime preserved. Build-machine obsolete exports/prototypes removed; current app/ZIP and51 source hashes verified. Remote cleanup metadata in evidence/results.json.",
   "c_backend": "dropped; implementation/build/tests removed, historical records archived",
   "session_close": {
    "date": "2026-11-06",

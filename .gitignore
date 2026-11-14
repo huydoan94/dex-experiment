@@ -1,6 +1,4 @@
 # Never commit.
-the private settings
-a private command log
 archive/
 releases/
 *.zip

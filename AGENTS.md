@@ -24,22 +24,20 @@ Before implementation, diagnosis or proposing live work:
 
 ## Access and ownership
 
-- Work autonomously in this workspace, on the backend machine and on the
-  Windows build machine. Do not ask again within those places. The virtualization host and
-  any physical host are off limits, including asking.
-- Reach the backend machine and the build machine only through the pinned SSH helpers in
-  the private lab tools. build machine files stay under
-  its work folder. Never print or commit credentials, host names, addresses or
-  personal details; use placeholders such as `<backend-host>` in tracked files.
-- The backend machine has few resources: never run heavy work there while a
-  viewer is attached. Run tests here, one module per process, memory-capped.
+- The lab machines, how they are reached, their limits and the lab tools are in a
+  private lab guide kept outside this repository. Never add any of that here:
+  no hosts, addresses, accounts, paths, access methods, tool locations or
+  machine details, and no tooling that reveals what is secret.
+- Never print or commit credentials or personal details; use placeholders such
+  as `<backend-host>` in tracked files.
+- Run tests here, one module per process, memory-capped; never run heavy work on
+  the backend machine while a viewer is attached.
 - Ask before reaching the phone outside the normal session lifecycle. Explain
   each live action's purpose, limits and cleanup in chat.
 - Exactly one USB owner. Preserve the running daemon files, pins and service.
   Never stop the black-screen app in software. Documentation work implies no
   deployment or live access.
-- Append every backend command and its result to a private command log
-  (untracked). Cleanup must not restart services or change phone state.
+- Cleanup must not restart services or change phone state.
 
 ## Lifecycle and established fixes
 
