@@ -127,6 +127,20 @@ Check(FileOffer.ChunkLine(new byte[FileOffer.ChunkBytes]).Length == FileOffer.Ma
     awake.Minimized(true); awake.Minimized(false); awake.Streaming(false); awake.Streaming(false);
     Check(applied.SequenceEqual([true, false, true, false]) && !awake.Active, "Minimizing and the session's end release the PC");
 }
+{
+    var idle = new DesktopInput(); // not Enabled: the window is inactive
+    Check(idle.Move(50, 25, 100, 50).Length == 0 && idle.Hover(50, 25, 100, 50).Single() == "M 0 960 540",
+          "An inactive window still sends the pointer as hover");
+    var held = new DesktopInput { Enabled = true };
+    held.Button(1, true);
+    Check(held.Hover(10, 10, 100, 50).Length == 0, "Hover never carries a held button");
+    var switched = new DesktopInput { Enabled = true };
+    switched.IgnoreHeld([0x12]); // Alt still held from Alt+Tab
+    Check(switched.Key(0x38, false, true, 0x12).Length == 0 && switched.Key(0x38, false, false, 0x12).Length == 0,
+          "A key held when the window became active is not sent, repeat or release");
+    Check(switched.Key(0x38, false, true, 0x12).Single() == "K d 56", "After its release that key works again");
+    Check(switched.Key(0x1e, false, true, 0x41).Single() == "K d 30", "Other keys are unaffected");
+}
 string dropFolder = Path.Combine(Path.GetTempPath(), "dex-checks-" + Guid.NewGuid().ToString("N"));
 using (var drop = new PhoneDrop(dropFolder, 2))
 {

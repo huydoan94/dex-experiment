@@ -8,6 +8,10 @@ public sealed class DesktopInput
 {
     private readonly HashSet<int> keys = [];
     private readonly HashSet<int> buttons = [];
+    // Virtual keys already held when the window became active (Alt from Alt+Tab): their
+    // auto-repeats and release belong to the switch, not to the phone.
+    private readonly HashSet<int> heldAtActivation = [];
+    public void IgnoreHeld(IEnumerable<int> virtualKeys) { heldAtActivation.Clear(); heldAtActivation.UnionWith(virtualKeys); }
     private readonly Dictionary<int, (int Press, int Release)> codes = new()
     { [1] = (2, 1), [2] = (6, 5), [3] = (4, 3), [4] = (15, 14), [5] = (17, 16) };
     public bool Enabled { get; set; }
@@ -43,6 +47,11 @@ public sealed class DesktopInput
     };
     public string[] Key(int scan, bool extended, bool down, int virtualKey = 0, bool system = false)
     {
+        if (virtualKey != 0 && heldAtActivation.Contains(virtualKey))
+        {
+            if (!down) heldAtActivation.Remove(virtualKey);
+            return [];
+        }
         int key = virtualKey switch
         {
             0x13 or 0x03 => 119, // Pause has a special multi-byte set-1 sequence.
@@ -59,9 +68,15 @@ public sealed class DesktopInput
         if (down ? !keys.Add(key) : !keys.Remove(key)) return [];
         return [$"K {(down ? "d" : "u")} {key}"];
     }
-    public string[] Move(double px, double py, double width, double height)
+    // The pointer over an inactive window: the phone sees it move (hover, cursor shapes)
+    // but never a button, since the window takes no clicks until it is active.
+    public string[] Hover(double px, double py, double width, double height) =>
+        buttons.Count != 0 ? [] : Position(px, py, width, height);
+    public string[] Move(double px, double py, double width, double height) =>
+        Enabled ? Position(px, py, width, height) : [];
+    private string[] Position(double px, double py, double width, double height)
     {
-        if (!Enabled || !double.IsFinite(px) || !double.IsFinite(py) || !double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0) return [];
+        if (!double.IsFinite(px) || !double.IsFinite(py) || !double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0) return [];
         x = Math.Clamp((int)(px * 1920 / width), 0, 1919);
         y = Math.Clamp((int)(py * 1080 / height), 0, 1079);
         // Dragging out of the picture with the left button: one step past the edge it
