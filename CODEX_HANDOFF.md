@@ -20,9 +20,10 @@ This repository is the research project. Data is saved in another container.
 - **Client**: 1.3.0 packaged (focus click and Alt+Tab not sent, hover sent while
   inactive; UI-tested without a phone, not yet tried live); 1.2.0 is the last one
   the user ran. Build from `windows/`.
-- **Backend pins**: comments reworded 2026-11-14 (no code change; dexd 14d06f4d in
-  the repository). The backend machine still runs the earlier files until the next
-  deploy (stage, idle, then the user restarts it).
+- **Backend pins** (repository, 2026-11-14): comments reworded, and the gateway
+  limits unauthenticated connections (direct_gateway b9079a8e, dexd 8c8aef1e). The
+  backend machine still runs the earlier files until the next deploy (stage,
+  idle, then the user restarts it).
 - **Behaviour**: async USB in/out, scrambled RTP with descrambling, pause on
   disconnect / resume on connect (10 s reply / 30 s video timeouts fall back to
   TEARDOWN + replug), replug after a session ends, pointer shapes, input wake,

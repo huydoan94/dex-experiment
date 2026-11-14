@@ -96,6 +96,14 @@ each area. Raw measurements are kept outside this repository.
   drag with mouse events 13/9/10 while hovering; on leaving, empty its file list
   so the drop becomes a cancel.
 
+## Gateway
+
+- **Slow unauthenticated clients could hold every slot** (2026-11-14, security
+  review). The 5 s timeout applied per read, so a client sending a byte every few
+  seconds never timed out; 16 such connections lock out the viewer. *Fix:* one 5 s
+  deadline for TLS and greeting together, and at most 4 unauthenticated
+  connections per source address.
+
 ## Operations incidents
 
 - **2026-11-07 02:19 stream drop** — the phone rebooted for an OMC software

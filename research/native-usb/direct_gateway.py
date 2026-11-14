@@ -23,6 +23,11 @@ PAIR_SECONDS = 15
 STARTUP_SECONDS = 120
 WRITE_SECONDS = .5
 MAX_GREETING = 1024
+# A client must finish TLS and send a valid greeting within this total time, and
+# one source address may hold only this many unauthenticated connections, so slow
+# or idle connections cannot keep the 16 slots from a real viewer.
+GREETING_SECONDS = 5
+PREAUTH_PER_ADDRESS = 4
 # DSCP 41 on everything sent to the client (user 2026-11-06); ToS byte = DSCP << 2,
 # the kernel keeps managing the two ECN bits.
 DSCP = 41
@@ -310,9 +315,28 @@ class Gateway(socketserver.ThreadingTCPServer):
         self.context, self.token, self.run_dir, self.log = context, token, Path(run_dir), log
         self.pair_lock, self.active = threading.Lock(), None
         self.slots = threading.BoundedSemaphore(16)
+        self.greeting_seconds = GREETING_SECONDS
+        self.preauth_lock, self.preauth = threading.Lock(), {}
         self.thread = None
         self.closing = False
         super().__init__(address, Handler)
+
+    def admit(self, address):
+        """Count one unauthenticated connection from address; False when at its limit."""
+        with self.preauth_lock:
+            count = self.preauth.get(address, 0)
+            if count >= PREAUTH_PER_ADDRESS:
+                return False
+            self.preauth[address] = count+1
+            return True
+
+    def admitted(self, address):
+        with self.preauth_lock:
+            count = self.preauth.get(address, 0)-1
+            if count > 0:
+                self.preauth[address] = count
+            else:
+                self.preauth.pop(address, None)
 
     def start(self):
         self.thread = threading.Thread(target=self.serve_forever, kwargs={'poll_interval': .1}, name='dex-direct-listener', daemon=True)
@@ -335,13 +359,29 @@ class Gateway(socketserver.ThreadingTCPServer):
 class Handler(socketserver.BaseRequestHandler):
     def handle(self):
         server = self.server
+        address = self.client_address[0]
+        if not server.admit(address):
+            return
         if not server.slots.acquire(blocking=False):
+            server.admitted(address)
             return
         sock = None
         pair = None
         attached = False
+        preauth = True
+
+        def cut():
+            # One deadline for TLS and greeting together: a per-read timeout alone
+            # lets a client that sends one byte every few seconds stay forever.
+            try:
+                self.request.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        deadline = threading.Timer(server.greeting_seconds, cut)
+        deadline.daemon = True
+        deadline.start()
         try:
-            self.request.settimeout(5)
+            self.request.settimeout(server.greeting_seconds)
             self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self.request.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, DSCP << 2)
             sock = server.context.wrap_socket(self.request, server_side=True)
@@ -362,6 +402,10 @@ class Handler(socketserver.BaseRequestHandler):
             if (greeting.get('version') != 1 or not isinstance(token, str)
                     or not hmac.compare_digest(token, server.token)):
                 return
+            deadline.cancel()
+            if preauth:
+                preauth = False
+                server.admitted(address)
             role, identity = greeting.get('role'), greeting.get('session')
             if role == 'probe':
                 response(sock, 'authenticated')
@@ -383,6 +427,9 @@ class Handler(socketserver.BaseRequestHandler):
         except (OSError, ValueError, TypeError):
             pass
         finally:
+            deadline.cancel()
+            if preauth:
+                server.admitted(address)
             if not attached and sock is not None:
                 sock.close()
             server.slots.release()
