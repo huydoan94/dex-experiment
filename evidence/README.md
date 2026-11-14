@@ -8,8 +8,8 @@ How each problem was fixed: [docs/FIXES.md](../docs/FIXES.md). Full history is k
 
 | Part | Identity |
 | --- | --- |
-| Backend | dexd 187f3e5b, kms_daemon_live b0804406, kms_daemon_probe 76da72e6, kms_session_live 94d8e954, direct_gateway 2451bdeb, clipboard_bridge 4471c768, file_bridge 8571a4bc, site_env 4787c7ff (all files: [MANIFEST.sha256](../research/native-usb/MANIFEST.sha256)); `before-*-2026111x` rollbacks; time zone, phone serial and sink name come from a local config file |
-| Windows client | 1.0.1 (not in this repository): system keys, clipboard text both ways, files PC to phone (copy and drag) and phone to PC (drag out); earlier test builds were 0.0.x |
+| Backend | dexd 8c8aef1e, kms_daemon_live b0804406, kms_daemon_probe 1a5f9977, kms_session_live 94d8e954, direct_gateway b9079a8e, clipboard_bridge 4471c768, file_bridge 3ca92381, site_env 4787c7ff (all files: [MANIFEST.sha256](../research/native-usb/MANIFEST.sha256)); `before-*-2026111x` rollbacks; time zone, phone serial and sink name come from a local config file |
+| Windows client | 1.3.0 (not in this repository; launcher D9E49861, app DLL C4EBB27A): focus click and Alt+Tab not sent, hover while inactive, keep-awake, GPU video, system keys, clipboard text both ways, files PC to phone (copy and drag) and phone to PC (drag out); earlier test builds were 0.0.x |
 | Behaviour | async USB in/out, scrambled RTP, pause on disconnect / resume on connect, replug after a session ends, pointer shapes, low-latency video, adaptive audio, system keys, clipboard text both ways, files PC to phone (copy-paste, drag and drop, delivery progress) |
 
 ## Open

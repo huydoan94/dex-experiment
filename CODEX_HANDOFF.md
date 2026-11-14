@@ -17,13 +17,14 @@ This repository is the research project. Data is saved in another container.
   `before-*-2026111x`. Time zone, phone serial and sink name come from a local
   config file read by dexd; without it, logs are UTC and the single attached
   phone is used.
-- **Client**: 1.3.0 packaged (focus click and Alt+Tab not sent, hover sent while
-  inactive; UI-tested without a phone, not yet tried live); 1.2.0 is the last one
-  the user ran. Build from `windows/`.
+- **Client**: 1.3.0 (focus click and Alt+Tab not sent, hover sent while
+  inactive), confirmed live by the user 2026-11-14. Build from `windows/`.
 - **Backend pins** (repository, 2026-11-14): comments reworded, and the gateway
-  limits unauthenticated connections (direct_gateway b9079a8e, dexd 8c8aef1e). The
-  backend machine still runs the earlier files until the next deploy (stage,
-  idle, then the user restarts it).
+  limits unauthenticated connections (direct_gateway b9079a8e, dexd 8c8aef1e). Deployed
+  2026-11-14 (before-gateway-20261114T154329Z backup); loads at the next backend
+  restart. All runtime files match the repository. The installed systemd unit is an older
+  copy that also sets TZ; dexd overrides it from site.json at start, so it stays
+  (user, 2026-11-14).
 - **Behaviour**: async USB in/out, scrambled RTP with descrambling, pause on
   disconnect / resume on connect (10 s reply / 30 s video timeouts fall back to
   TEARDOWN + replug), replug after a session ends, pointer shapes, input wake,
