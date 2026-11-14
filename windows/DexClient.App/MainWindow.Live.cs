@@ -33,6 +33,11 @@ public sealed partial class MainWindow
     private TaskCompletionSource? firstPicture;
     private bool stoppingLive;
     private bool syntheticLive;
+    // UI test (synthetic stream only): "--record-input <file>" handles input as in a phone
+    // session and writes the lines it would send to that file; "--loop" replays the stream.
+    private bool recordingInput;
+    private string? loopStream;
+    private bool InputBlocked => (syntheticLive && !recordingInput) || phoneAcceptance;
     private bool phoneAcceptance;
     private bool inputHiccupCheck;
     private bool inputCheckCompleted;
@@ -127,9 +132,13 @@ public sealed partial class MainWindow
             await Task.Run(() => NativeRuntime.Initialize(native, test ? MediaTrace : null), token);
             if (test)
             {
+                int record = Array.IndexOf(arguments, "--record-input");
+                recordingInput = record >= 0 && record + 1 < arguments.Length;
+                loopStream = arguments.Contains("--loop") ? arguments[index + 2] : null;
                 source = new FileStream(arguments[index + 2], FileMode.Open, FileAccess.Read, FileShare.Read);
                 syntheticInput = new MemoryStream();
-                liveWriter = new InputWriter(syntheticInput);
+                liveWriter = new InputWriter(recordingInput
+                    ? new FileStream(arguments[record + 1], FileMode.Create, FileAccess.Write, FileShare.Read) : syntheticInput);
             }
             else
             {
@@ -175,7 +184,7 @@ public sealed partial class MainWindow
                 gpuVideo = await Task.Run(() => GpuVideo.TryCreate(out gpuUnavailable), token);
             else gpuUnavailable = "Software rendering is selected";
             GpuVideo? gpu = gpuVideo;
-            decoding = Task.Run(() => LiveDecoder.Decode(source, frame =>
+            LiveDecodeResult DecodeFrom(Stream input) => LiveDecoder.Decode(input, frame =>
             {
                 Interlocked.Increment(ref decodedFrames); metrics.Mark("decoded");
                 if (inputHiccupCheck) metrics.Mark(playbackPhase + "_decoded");
@@ -184,7 +193,19 @@ public sealed partial class MainWindow
                 if (test) Thread.Sleep(10); // Synthetic pacing only, never in a phone session.
             }, _ => { }, token, reuseVideoBuffers: !baselineTiming,
                 timedAudio: (pts, samples) => { Interlocked.Increment(ref decodedAudioFrames); player.Push(samples, pts); if (inputHiccupCheck) metrics.Mark(playbackPhase + "_audio"); }, measure: metrics.Add,
-                gpu: gpu), token);
+                gpu: gpu);
+            Stream firstInput = source;
+            decoding = Task.Run(() =>
+            {
+                var result = DecodeFrom(firstInput);
+                // UI test only: a fresh decoder per pass over the recorded stream, so it plays until closed.
+                while (loopStream != null && !token.IsCancellationRequested)
+                {
+                    using var again = new FileStream(loopStream, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    result = DecodeFrom(again);
+                }
+                return result;
+            }, token);
             if (backend != null) monitoring = backend.MonitorAsync(monitorStop.Token);
             Task startup = firstPicture.Task.WaitAsync(TimeSpan.FromSeconds(120), token);
             Task first = await Task.WhenAny(decoding, startup, monitoring ?? decoding);
@@ -296,7 +317,7 @@ public sealed partial class MainWindow
     }
     private void RenderLive()
     {
-        if (session.CanSendInput && windowActive) Send(controls.FlushMove());
+        if (session.CanSendInput) Send(controls.FlushMove()); // hover moves too, focused or not
         var frames = videoSchedule;
         if (frames == null || frames.Generation != session.Generation || session.State is ConnectionState.Disconnecting or ConnectionState.Disconnected) return;
         try
@@ -335,8 +356,11 @@ public sealed partial class MainWindow
                 keepAwake.Streaming(true); // until the session ends (or while minimized)
                 if (syntheticLive || phoneAcceptance)
                 {
-                    Send(controls.Move(VideoSurface.ActualWidth / 2, VideoSurface.ActualHeight / 2, VideoSurface.ActualWidth, VideoSurface.ActualHeight));
-                    Send(controls.Key(0x2a, false, true));
+                    if (!recordingInput) // a UI test records only what its own input produces
+                    {
+                        Send(controls.Move(VideoSurface.ActualWidth / 2, VideoSurface.ActualHeight / 2, VideoSurface.ActualWidth, VideoSurface.ActualHeight));
+                        Send(controls.Key(0x2a, false, true));
+                    }
                     if (cancelStreamTest) _ = StopLiveAsync(false);
                     else if (batchAcceptance)
                     {

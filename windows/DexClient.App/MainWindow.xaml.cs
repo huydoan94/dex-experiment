@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using DexClient.Media;
 using Microsoft.UI.Dispatching;
@@ -25,7 +26,7 @@ public sealed partial class MainWindow : Window
         try
         {
             systemKeys = new SystemKeyHook(WinRT.Interop.WindowNative.GetWindowHandle(this),
-                () => !syntheticLive && !phoneAcceptance && session.CanSendInput && windowActive,
+                () => !InputBlocked && session.CanSendInput && windowActive,
                 (scan, extended, down, virtualKey) =>
                 {
                     controls.Enabled = session.CanSendInput && windowActive;
@@ -35,7 +36,16 @@ public sealed partial class MainWindow : Window
         catch (System.ComponentModel.Win32Exception) { } // Without the hook these keys stay with Windows.
         Activated += (window, args) =>
         {
+            bool wasActive = windowActive;
             windowActive = args.WindowActivationState != WindowActivationState.Deactivated;
+            if (windowActive && !wasActive)
+            {
+                // What brought the window forward stays on the PC: keys still held from
+                // Alt+Tab, and the click that focused it (its press and release).
+                controls.IgnoreHeld(NativeInput.HeldKeys());
+                activationClickAt = NativeInput.MouseButtonHeld() ? Stopwatch.GetTimestamp() : 0;
+            }
+            if (recordingInput) MediaTrace($"ui_activation state={args.WindowActivationState} active={windowActive} buttonHeld={activationClickAt != 0}");
             if (!windowActive) { Send(controls.ReleaseAll()); controls.Enabled = false; AskPhoneClipboard(); }
             else ShareClipboardWithPhone();
         };
