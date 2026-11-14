@@ -35,6 +35,29 @@ Before implementation, diagnosis or proposing live work:
   deployment or live access.
 - Cleanup must not restart services or change phone state.
 
+## Working style (user rules)
+
+- Every tracked file, log, fixture and commit message is public; machine
+  details, access and site values never go in it.
+- Commits use the noreply identity and UTC dates, with no AI attribution trailer.
+- After offering options, wait for the user's choice before building any of them.
+- Client features are always on; add no toolbar toggles unless asked.
+- Call the study of the phone apps "inside research".
+- Judge input and UI behaviour by what the backend receives: the synthetic stream
+  with `--record-input` and `--loop` plus real desktop input on Windows; no phone
+  needed for that.
+- The local repository is the source of truth: every tracked file on the backend
+  machine or in a remote build folder must match it by hash, unpinned ones too.
+  Change files only here, then copy and verify; compare before and after remote
+  work and report any difference (copy the repository version, or let the user
+  decide when it may be intended). Purely local work skips this.
+- Deploy: check no viewer, verify the live files are the previous versions, stage,
+  check pins, back up, swap, record each hash; the user restarts the backend, then
+  verify.
+- Fix automated security-review findings (with a test that fails on the old
+  code) or say why they do not apply.
+- The user's own PC is off limits.
+
 ## Lifecycle and established fixes
 
 A live request covers listener relisten, idle owner, automatic Start, black
