@@ -2,11 +2,12 @@
  "schema": "compact current-state record (2026-11-07); full history is kept outside this repository",
  "deployed": {
   "client": {
-   "package": "DexClient-Windows-x64-1.3.0 (not in this repository)",
+   "package": "DexClient-Windows-x64-1.3.2 (not in this repository)",
    "launcher_exe": "D9E49861E343749B63C02E5163F2485D72AFAAB5E37E989BCF1AEBD61389E2E5",
-   "app_dll": "C4EBB27A8E949BC45D7C64DE5C5F306231AA661D1D011279B3CD386FFE8F5D2E",
-   "media_dll": "F9BBE9CE77ECD4EEAA986B651BCED9A62891D0FDD50498965A5932C91DBE7AF6",
-   "confirmed": "live by the user 2026-11-14"
+   "app_dll": "C7640F632C8FD48791EFC79C624BCE3E421C10F52F1753C8A1B3C0F9C6B93C75",
+   "core_dll": "F88417D681D4C01896469469D7363CEDC7F9F503CDFF5CCF2D5401AF7EFD5E68",
+   "media_dll": "09C96BEA19EF9DC4532E11FE013FE39115752B6170167690C6D50CA96EEF1C01",
+   "confirmed": "not yet tried live"
   },
   "backend_container": {
    "path": "runtime subset of research/native-usb on the backend machine",

@@ -18,10 +18,13 @@ This repository is the research project. Data is saved in another container.
   config file read by dexd; without it, logs are UTC and the single attached
   phone is used.
 - **Site settings**: the phone USB ID and the replug request folder now come from
-  the backend's site settings (`usb_id`, `request_dir`). Not yet deployed: add
-  both keys there first, then deploy and restart.
-- **Client**: 1.3.0 (focus click and Alt+Tab not sent, hover sent while
-  inactive), confirmed live by the user 2026-11-14. Build from `windows/`.
+  the backend's site settings (`usb_id`, `request_dir`); deployed 2026-11-15 with
+  both keys set; running since the restart that day.
+- **Backend version**: 1.0.0 (1a432ee1) (dexd VERSION + short dexd.py hash), reported to the
+  app by the gateway. Bump VERSION with each backend release.
+- **Client**: 1.3.2 packaged (app and backend versions in telemetry, no
+  "Connected" line), not yet tried live; 1.3.0 (focus click, Alt+Tab, hover) confirmed live 2026-11-14 and
+  kept until 1.3.2 is. Build from `windows/`.
 - **Backend pins** (repository, 2026-11-14): comments reworded, and the gateway
   limits unauthenticated connections (direct_gateway b9079a8e, dexd 0be9f39c). Deployed
   2026-11-14 (before-gateway-20261114T154329Z backup); loads at the next backend
