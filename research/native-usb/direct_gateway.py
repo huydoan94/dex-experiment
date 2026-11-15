@@ -44,8 +44,13 @@ CHUNK_LINE_BYTES = 3 + 4*((49152+2)//3)
 BASE64 = frozenset(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
 
 
-def response(sock, status):
-    sock.sendall((json.dumps({'version': 1, 'status': status})+'\n').encode())
+def response(sock, status, backend=None):
+    """One reply line; 'backend' (the backend's version) only when known: older
+    clients read 'version' and 'status' and ignore anything else."""
+    reply = {'version': 1, 'status': status}
+    if backend:
+        reply['backend'] = backend
+    sock.sendall((json.dumps(reply)+'\n').encode())
 
 
 def fifo(path, flags):
@@ -130,7 +135,7 @@ class Pair:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             for sock in self.sockets.values():
                 sock.settimeout(WRITE_SECONDS)
-                response(sock, 'ready')
+                response(sock, 'ready', self.server.backend)
             self.server.log(dict(event='direct_session_started', transports=2))
             for role, relay in [('input', self.input), ('media', self.media)]:
                 thread = threading.Thread(target=self.guard, args=(relay,), name='dex-direct-'+role, daemon=True)
@@ -309,10 +314,11 @@ class Gateway(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, address, *, context, token, run_dir, log=lambda event: None):
+    def __init__(self, address, *, context, token, run_dir, log=lambda event: None, backend=None):
         if len(token) < 32:
             raise ValueError('gateway token too short')
         self.context, self.token, self.run_dir, self.log = context, token, Path(run_dir), log
+        self.backend = backend
         self.pair_lock, self.active = threading.Lock(), None
         self.slots = threading.BoundedSemaphore(16)
         self.greeting_seconds = GREETING_SECONDS
@@ -408,7 +414,7 @@ class Handler(socketserver.BaseRequestHandler):
                 server.admitted(address)
             role, identity = greeting.get('role'), greeting.get('session')
             if role == 'probe':
-                response(sock, 'authenticated')
+                response(sock, 'authenticated', server.backend)
                 return
             if role not in ('input', 'media') or not isinstance(identity, str) or uuid.UUID(identity).hex != identity:
                 return
@@ -435,13 +441,14 @@ class Handler(socketserver.BaseRequestHandler):
             server.slots.release()
 
 
-def configured(config_path, run_dir, log=lambda event: None):
+def configured(config_path, run_dir, log=lambda event: None, backend=None):
     settings = json.loads(Path(config_path).read_text())
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(settings['certificate'], settings['private_key'])
     return Gateway(('0.0.0.0', settings.get('port', 7443)), context=context,
-                   token=Path(settings['token_file']).read_text().strip(), run_dir=run_dir, log=log)
+                   token=Path(settings['token_file']).read_text().strip(), run_dir=run_dir, log=log,
+                   backend=backend)
 
 
 if __name__ == '__main__':

@@ -117,6 +117,13 @@ Check(FileOffer.ChunkLine(new byte[FileOffer.ChunkBytes]).Length == FileOffer.Ma
     Check(ClientSettings.LoadRendering(settingsPath) == VideoRendering.Hardware, "A damaged settings file falls back to hardware rendering");
     Directory.Delete(Path.GetDirectoryName(settingsPath)!, true);
 }
+Check(StatusText.Connected(true) == null && StatusText.Connected(false) == "No audio output device",
+      "A working session shows no status text; a missing audio device does");
+Check(StatusText.Version(new Version(1, 3, 1, 0)) == "1.3.1" && StatusText.Version(new Version(2, 0)) == "2.0.0"
+      && StatusText.Version(null) == "unknown", "Version shows major.minor.patch");
+Check(StatusText.Backend("1.0.0 (abcd1234)") == "1.0.0 (abcd1234)" && StatusText.Backend(null) == "unknown"
+      && StatusText.Backend("") == "unknown" && StatusText.Backend("bad\nline") == "unknown"
+      && StatusText.Backend(new string('x', 41)) == "unknown", "Backend version is shown only when short and printable");
 {
     var applied = new List<bool>();
     var awake = new KeepAwake(applied.Add);

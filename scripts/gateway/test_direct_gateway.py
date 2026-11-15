@@ -115,6 +115,17 @@ class GatewayTests(unittest.TestCase):
         self.until(lambda:not self.server.preauth)
         c=self.connect('probe');self.assertEqual(self.line(c)['status'],'authenticated')
         self.until(lambda:not self.server.preauth)
+    def test_replies_carry_the_backend_version_only_when_known(self):
+        c=self.connect('probe');self.assertEqual(self.line(c),{'version':1,'status':'authenticated'})
+        self.server.backend='1.0.0 (abcd1234)'
+        c=self.connect('probe');self.assertEqual(self.line(c)['backend'],'1.0.0 (abcd1234)')
+        a,b=self.pair()   # pair() reads both ready lines
+        for s in (a,b):self.clients.remove(s);s.close()
+        self.until(lambda:self.server.active is None)
+        identity=uuid.uuid4().hex
+        a=self.connect('input',identity);b=self.connect('media',identity)
+        self.assertEqual(self.line(a),{'version':1,'status':'ready','backend':'1.0.0 (abcd1234)'})
+        self.assertEqual(self.line(b)['backend'],'1.0.0 (abcd1234)')
     def test_bad_token_cannot_start_session(self):
         c=self.connect('media',token='incorrect');self.assertEqual(c.recv(1),b'');self.locks_free();self.assertIsNone(self.server.active)
     def test_partial_pair_disconnect_releases_admission_without_fifo_claim(self):

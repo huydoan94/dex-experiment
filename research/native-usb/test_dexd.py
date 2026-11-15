@@ -387,6 +387,13 @@ class SiteSettingsTests(unittest.TestCase):
                     self.assertEqual(dexd.find_phone(),(3,7))
                 self.assertEqual(found,[(0x1234,0xabcd)])
 
+    def test_backend_version_is_the_release_and_this_files_hash(self):
+        import hashlib,re
+        version=dexd.backend_version()
+        self.assertRegex(version,r"^\d+\.\d+\.\d+ \([0-9a-f]{8}\)$")
+        self.assertTrue(version.startswith(dexd.VERSION+" "))
+        self.assertIn(hashlib.sha256(Path(dexd.__file__).read_bytes()).hexdigest()[:8],version)
+
     def test_no_source_names_a_usb_vendor(self):
         here=Path(dexd.__file__).parent
         for path in [*here.glob("*.py"),*here.glob("*.sh"),here.parents[1]/"dex_probe.py"]:

@@ -52,6 +52,18 @@ public sealed partial class MainWindow
     private static SolidColorBrush Brush(uint rgb) => new(ColorHelper.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
     private static Border Card(UIElement content, double radius, Thickness padding) => new()
     { Child = content, CornerRadius = new CornerRadius(radius), Background = Brush(0x1C1F24), BorderBrush = Brush(0x2A2D33), BorderThickness = new Thickness(1), Padding = padding };
+    // The state the bottom-left line reports; telemetry shows it even while the line is hidden.
+    private string statusLine = "Disconnected";
+    private static readonly string AppVersion = StatusText.Version(typeof(MainWindow).Assembly.GetName().Version);
+
+    // null hides the line (a working session); any other state shows it again.
+    private void ShowStatus(string? text)
+    {
+        statusLine = text ?? "Connected";
+        ConnectionStatus.Text = text ?? "";
+        ConnectionStatus.Visibility = text is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
     private static TextBlock Label(string text) => new() { Text = text, FontSize = 12, Foreground = Brush(0x9BA1AA) };
 
     // Layout from design-reference/remote-desktop-ui (telemetry board). Every value
@@ -94,6 +106,9 @@ public sealed partial class MainWindow
         }
         var done = new Button { Content = "Close", Height = 44, Padding = new Thickness(20, 0, 20, 0), CornerRadius = new CornerRadius(10), Background = Brush(0x22252B),
             BorderBrush = Brush(0x33373E), BorderThickness = new Thickness(1), Foreground = Brush(0xF1F3F5), HorizontalAlignment = HorizontalAlignment.Right };
+        var version = Label("");
+        version.VerticalAlignment = VerticalAlignment.Center;
+        var footer = new Grid { Children = { version, done } };
         // Video rendering: saved per user, used from the next connection (switching decoders
         // mid-stream would need a new keyframe from the phone).
         var rendering = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 40,
@@ -105,7 +120,7 @@ public sealed partial class MainWindow
             renderingNote.Text = ClientSettings.SaveRendering(ClientSettings.DefaultPath, rendering.SelectedIndex == 1 ? VideoRendering.Software : VideoRendering.Hardware)
                 ? "Saved. Applies from the next connection." : "Couldn't save the setting.";
         var renderingCard = Card(new StackPanel { Spacing = 6, Children = { Label("Video rendering"), rendering, renderingNote } }, 10, new Thickness(14, 12, 14, 12));
-        var body = new StackPanel { Spacing = 18, HorizontalAlignment = HorizontalAlignment.Stretch, Children = { header, latencyCard, stats, renderingCard, done } };
+        var body = new StackPanel { Spacing = 18, HorizontalAlignment = HorizontalAlignment.Stretch, Children = { header, latencyCard, stats, renderingCard, footer } };
 
         var samples = new Queue<double>();
         var clock = Stopwatch.StartNew();
@@ -118,7 +133,10 @@ public sealed partial class MainWindow
             bool streaming = media != null && presentedFrames > 0;
             dot.Fill = Brush(streaming ? 0x3FB950u : 0x9BA1AAu);
             var elapsed = sessionDuration.Elapsed;
-            live.Text = (streaming ? "Live" : ConnectionStatus.Text) + " · session " + (elapsed.TotalHours >= 1 ? elapsed.ToString(@"h\:mm\:ss") : elapsed.ToString(@"mm\:ss"));
+            string backendVersion = StatusText.Backend(liveBackend?.BackendVersion);
+            version.Text = $"App {AppVersion} · Backend {backendVersion}";
+            AutomationProperties.SetName(version, $"App version {AppVersion}, backend version {backendVersion}");
+            live.Text = (streaming ? "Live" : statusLine) + " · session " + (elapsed.TotalHours >= 1 ? elapsed.ToString(@"h\:mm\:ss") : elapsed.ToString(@"mm\:ss"));
             if (media != null)
             {
                 double rtt = media.RoundTripMicroseconds / 1000d;

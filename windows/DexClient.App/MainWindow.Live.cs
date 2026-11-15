@@ -87,7 +87,7 @@ public sealed partial class MainWindow
             if (Environment.ExitCode != 0) break;
             if (batchIteration < count)
             {
-                ConnectionStatus.Text = "Reconnecting after backend cleanup…";
+                ShowStatus("Reconnecting after backend cleanup…");
                 await Task.Delay(TimeSpan.FromSeconds(30), lifetime.Token);
             }
         }
@@ -120,7 +120,7 @@ public sealed partial class MainWindow
         inputCheckCompleted = false; inputPhases.Clear(); playbackPhase = "startup";
         ConnectButton.IsEnabled = false; DisconnectButton.IsEnabled = true;
         SetSessionShell(true);
-        ConnectionStatus.Text = "Connecting…";
+        ShowStatus("Connecting…");
         try
         {
             string[] arguments = Environment.GetCommandLineArgs();
@@ -174,7 +174,7 @@ public sealed partial class MainWindow
             }
             token.ThrowIfCancellationRequested();
             if (!session.TransportReady(generation) || !session.SessionStarted(generation)) token.ThrowIfCancellationRequested();
-            ConnectionStatus.Text = "Starting DeX — waiting for picture…";
+            ShowStatus("Starting DeX — waiting for picture…");
             audio = await Task.Run(() => new LiveAudio(), token);
             audioAvailable = audio.Available;
             LiveAudio player = audio; sessionAudio = player;
@@ -231,14 +231,14 @@ public sealed partial class MainWindow
             decoded = await decoding;
             if (test) await Task.Delay(100, token);
             passed = test && decoded.VideoFrames > 120 && decoded.AudioFrames > 0 && presentedFrames > 1 && !liveWriter.Failed;
-            ConnectionStatus.Text = "Disconnected";
+            ShowStatus("Disconnected");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         { cancellationObserved = true;
           passed = (test && cancelStreamTest && presentedFrames > 0 || phoneAcceptance && phoneWindowCompleted && presentedFrames > 1 && decodedAudioFrames > 0) && presentationError == null;
-          failure = presentationError?.GetType().Name; ConnectionStatus.Text = presentationError == null ? "Disconnected" : "Display failed"; }
+          failure = presentationError?.GetType().Name; ShowStatus(presentationError == null ? "Disconnected" : "Display failed"); }
         catch (Exception error)
-        { failure = error.GetType().Name; ConnectionStatus.Text = "Connection ended: " + error.Message; }
+        { failure = error.GetType().Name; ShowStatus("Connection ended: " + error.Message); }
         finally
         {
             session.BeginDisconnect(generation); controls.Enabled = false;
@@ -253,7 +253,7 @@ public sealed partial class MainWindow
                 if (decoding != null) { try { await decoding.WaitAsync(TimeSpan.FromSeconds(5)); } catch (OperationCanceledException) { } catch (Exception) when (decoding.IsCompleted) { } }
                 if (monitoring != null) { try { await monitoring.WaitAsync(TimeSpan.FromSeconds(2)); } catch (OperationCanceledException) { } catch (IOException) { } }
             }
-            catch (Exception error) { failure ??= error.GetType().Name; passed = false; ConnectionStatus.Text = "Session cleanup failed"; }
+            catch (Exception error) { failure ??= error.GetType().Name; passed = false; ShowStatus("Session cleanup failed"); }
             bool layoutVerified = livePresenter?.LayoutScaleVerified ?? false;
             bool viewportResized = viewportResizeRequested && Math.Abs(VideoSurface.ActualWidth - initialViewportWidth) > 1;
             var timing = metrics.Summary();
@@ -312,7 +312,7 @@ public sealed partial class MainWindow
             if (liveTask != null) await liveTask.WaitAsync(TimeSpan.FromSeconds(12));
             if (closeWindow) Close();
         }
-        catch (Exception) { ConnectionStatus.Text = "Waiting for session cleanup"; }
+        catch (Exception) { ShowStatus("Waiting for session cleanup"); }
         finally { stoppingLive = false; }
     }
     private void RenderLive()
@@ -349,7 +349,7 @@ public sealed partial class MainWindow
             if (session.PictureReady(session.Generation))
             {
                 liveBackend?.RequestCursorShapes();
-                controls.Enabled = true; ConnectionStatus.Text = audioAvailable ? "Connected" : "Connected — no audio output device";
+                controls.Enabled = true; ShowStatus(StatusText.Connected(audioAvailable));
                 InputSurface.Focus(FocusState.Programmatic);
                 if (windowActive) ShareClipboardWithPhone(); // After the cursor opt-in line.
                 firstPicture?.TrySetResult();
