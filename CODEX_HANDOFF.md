@@ -28,9 +28,8 @@ This repository is the research project. Data is saved in another container.
 - **Backend pins** (repository, 2026-11-14): comments reworded, and the gateway
   limits unauthenticated connections (direct_gateway b9079a8e, dexd 0be9f39c). Deployed
   2026-11-14 (before-gateway-20261114T154329Z backup); loads at the next backend
-  restart. All runtime files match the repository. The installed systemd unit is an older
-  copy that also sets TZ; dexd overrides it from site.json at start, so it stays
-  (user, 2026-11-14).
+  restart. All runtime files and the installed systemd unit match the repository
+  (unit installed by the user 2026-11-15).
 - **Behaviour**: async USB in/out, scrambled RTP with descrambling, pause on
   disconnect / resume on connect (10 s reply / 30 s video timeouts fall back to
   TEARDOWN + replug), replug after a session ends, pointer shapes, input wake,
