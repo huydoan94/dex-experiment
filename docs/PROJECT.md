@@ -16,7 +16,8 @@ one session per backend run:
    `rtsp_udp_long`/`rtsp_udp_live`/`rtsp_udp_play` -> `duplex_link` ->
    `conn_transfer.TransferDecoder` (keep the whole chain; the base Decoder alone
    is not the reference).
-3. Viewer leaves: TEARDOWN, cleanup, then dexd requests a phone **replug**; ready again in ~20 s.
+3. Viewer leaves: TEARDOWN, cleanup, then dexd requests a phone **replug**;
+   ready again in ~20 s.
 
 Key behaviour in `kms_daemon_live.py`:
 
@@ -49,7 +50,8 @@ release on focus loss. Gateway marks client traffic DSCP 41.
 ## Machines and access
 
 The backend runs on a small Linux machine attached to the phone; the client is
-built and tested on Windows.
+built and tested on Windows. Site values (time zone, phone serial and USB ID,
+replug request folder, sink name) come from the backend's site settings file.
 
 ## Changing the backend
 

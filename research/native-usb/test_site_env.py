@@ -9,6 +9,14 @@ class SiteEnvTests(unittest.TestCase):
     def tearDown(self):
         site_env._selected = None
 
+    def test_phone_usb_id_is_read_only_from_the_environment(self):
+        with patch.dict(os.environ, {"DEX_USB_ID": "12ab:CD34"}):
+            self.assertEqual(site_env.phone_usb_id(), (0x12AB, 0xCD34))
+        for value in ("", "12ab", "12ab:cd3", "zzzz:0000", "12ab:cd34:56"):
+            with patch.dict(os.environ, {"DEX_USB_ID": value}):
+                with self.assertRaises(RuntimeError):
+                    site_env.phone_usb_id()
+
     def test_defaults_keep_the_earlier_profile_with_a_generic_name(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(site_env.sink_name(), "DeX-PC")

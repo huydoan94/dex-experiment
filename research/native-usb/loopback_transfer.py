@@ -11,6 +11,7 @@ import signal
 import loopback_capture as base
 from tunnel_probe import SERVICE_UID, emit, _terminated
 from usb_tunnel import Session, TunnelError
+import site_env
 
 FORWARD = b"dex-loop-forward-v1"
 REVERSE = b"dex-loop-reverse-v1"
@@ -122,8 +123,9 @@ def main(argv=None):
     try:
         import usb.core
         import usb.util
-        devices = list(usb.core.find(find_all=True, idVendor=0x0000,
-                                    idProduct=0x0000, bus=a.bus, address=a.address))
+        vendor_id, product_id = site_env.phone_usb_id()
+        devices = list(usb.core.find(find_all=True, idVendor=vendor_id,
+                                    idProduct=product_id, bus=a.bus, address=a.address))
         if len(devices) != 1:
             raise RuntimeError("expected exactly one selected phone")
         base.probe(devices[0], usb.util, usb.core.USBTimeoutError, a.output, result,

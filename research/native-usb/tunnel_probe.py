@@ -16,6 +16,7 @@ import time
 
 from usb_tunnel import Session, TunnelError
 from version_query import validate_config
+import site_env
 
 INTERFACE = 3
 WRITE_ENDPOINT = 3
@@ -216,8 +217,9 @@ def run(output, bus, address, usb_core, usb_util, clock=time.monotonic):
     """Approved path after argument checks; returns the exit status."""
     result = {}
     try:
-        emit('usb_find', vendor=0x0000, product=0x0000, bus=bus, address=address)
-        devices = list(usb_core.find(find_all=True, idVendor=0x0000, idProduct=0x0000,
+        vendor_id, product_id = site_env.phone_usb_id()
+        emit('usb_find', vendor=vendor_id, product=product_id, bus=bus, address=address)
+        devices = list(usb_core.find(find_all=True, idVendor=vendor_id, idProduct=product_id,
                                      bus=bus, address=address))
         if len(devices) != 1:
             raise RuntimeError('expected exactly one matching phone; refusing alternatives')

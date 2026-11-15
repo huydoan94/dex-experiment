@@ -269,10 +269,25 @@ class Tests(unittest.TestCase):
             holder.kill();holder.wait()
         self.assertFalse(dexd.viewer_waiting())
 
-    def test_missing_host_folder_is_logged(self):
+    def test_missing_request_folder_is_logged(self):
         with patch.object(dexd,"REQUEST_DIR",Path(self.env.tmp.name)/"absent"):
             dexd.request_replug("x","restart")
         self.assertIn("replug request failed",self.env.log())
+
+    def test_no_configured_request_folder_writes_nothing(self):
+        with patch.object(dexd,"REQUEST_DIR",None):
+            dexd.request_replug("x","replug")
+        self.assertIn("no request folder configured",self.env.log())
+
+    def test_no_phone_usb_id_idles_without_searching(self):
+        d=dexd.Dexd()
+        threading.Timer(.3,d.terminate).start()
+        with patch.dict(os.environ,{"DEX_USB_ID":""}),patch.object(dexd,"site_settings",lambda path=None:{}), \
+                patch.object(d,"relisten") as relisten,patch.object(d,"session") as session:
+            d.run()
+        relisten.assert_not_called()
+        session.assert_not_called()
+        self.assertIn("phone USB ID not set",self.env.log())
 
     def test_no_phone_means_no_relisten_or_session(self):
         d=dexd.Dexd()
@@ -351,6 +366,31 @@ class SiteSettingsTests(unittest.TestCase):
             self.assertEqual(dexd.site_settings(path),{"timezone":"Etc/UTC","phone_serial":"ABC123"})
             path.write_text("not json")
             self.assertEqual(dexd.site_settings(path),{})
+
+    def test_usb_id_and_request_folder_come_from_the_site_settings(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"site.json"
+            path.write_text('{"usb_id":"1234:abcd","request_dir":"%s"}'%d)
+            settings=dexd.site_settings(path)
+            self.assertEqual(settings,{"usb_id":"1234:abcd","request_dir":d})
+            with patch.dict(os.environ,{"DEX_USB_ID":""}),patch.object(dexd,"REQUEST_DIR",None):
+                dexd.apply_site(settings)
+                self.assertEqual(os.environ["DEX_USB_ID"],"1234:abcd")   # inherited by every child
+                self.assertEqual(dexd.REQUEST_DIR,Path(d))
+                found=[]
+                class Phone:bus,address=3,7
+                def find(**kw):
+                    found.append((kw["idVendor"],kw["idProduct"]));return [Phone()]
+                core=type(sys)("usb.core");core.find=find
+                usb=type(sys)("usb");usb.core=core
+                with patch.dict(sys.modules,{"usb":usb,"usb.core":core}):
+                    self.assertEqual(dexd.find_phone(),(3,7))
+                self.assertEqual(found,[(0x1234,0xabcd)])
+
+    def test_no_source_names_a_usb_vendor(self):
+        here=Path(dexd.__file__).parent
+        for path in [*here.glob("*.py"),*here.glob("*.sh"),here.parents[1]/"dex_probe.py"]:
+            self.assertNotRegex(path.read_text(),r"idVendor\s*=\s*0x|idVendor\"\)\s*!=\s*\"[0-9a-f]{4}\"",path.name)
 
     def test_black_screen_gets_the_serial_only_through_the_environment(self):
         seen=[]

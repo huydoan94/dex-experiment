@@ -19,7 +19,7 @@ if (( dex_age_seconds < 0 || dex_age_seconds > 45 )); then
     echo "STOP: reconnect marker age $dex_age_seconds seconds exceeds the allowed window." >&2
     exit 1
 fi
-printf '%s\n' 'bd1d65f7ff39764fc20d944ee4e06d1fe7853a93b1ac5d5dfabb030e387d142e  research/native-usb/app_bootstrap.py' | sha256sum -c -
+printf '%s\n' 'cb2245f3f5c7d217a94add14e3691cf89f47e370afec9d59f01cccb344a30410  research/native-usb/app_bootstrap.py' | sha256sum -c -
 dex_marker=research/native-usb/reconnect-$dex_started_epoch.used
 if ! (set -o noclobber; printf '%s\n' "$dex_now_epoch" > "$dex_marker") 2>/dev/null; then
     echo 'STOP: this reconnect marker has already been consumed.' >&2

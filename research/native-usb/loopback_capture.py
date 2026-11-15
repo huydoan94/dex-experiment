@@ -12,6 +12,7 @@ import time
 from idc_capture import CaptureSession
 from tunnel_probe import Link, SERVICE_UID, emit, _terminated
 from version_query import validate_config
+import site_env
 
 LISTENER_CONFIG = 601
 CONNECT_CONFIG = 602
@@ -142,8 +143,9 @@ def main(argv=None):
     try:
         import usb.core
         import usb.util
-        devices = list(usb.core.find(find_all=True, idVendor=0x0000,
-                                    idProduct=0x0000, bus=a.bus, address=a.address))
+        vendor_id, product_id = site_env.phone_usb_id()
+        devices = list(usb.core.find(find_all=True, idVendor=vendor_id,
+                                    idProduct=product_id, bus=a.bus, address=a.address))
         if len(devices) != 1:
             raise RuntimeError("expected exactly one selected phone")
         probe(devices[0], usb.util, usb.core.USBTimeoutError, a.output, result)

@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -62,17 +63,26 @@ def select_device(devices, requested=None):
     return devices[0][0]
 
 
+def phone_vendor():
+    """The phone's USB vendor ID ("vvvv") from DEX_USB_ID ("vvvv:pppp"), or None."""
+    value = os.environ.get("DEX_USB_ID", "").strip().lower()
+    return value[:4] if len(value) == 9 and value[4] == ":" else None
+
+
 def samsung_usb(root=pathlib.Path("/sys/bus/usb/devices")):
     result = []
+    vendor = phone_vendor()
+    if vendor is None:
+        return result
     def read(path):
         try:
             return path.read_text().strip()
         except OSError:
             return None
     for path in sorted(root.glob("*")):
-        if read(path / "idVendor") != "0000":
+        if read(path / "idVendor") != vendor:
             continue
-        item = {"port": path.name, "vendor_id": "0000",
+        item = {"port": path.name, "vendor_id": vendor,
                 "product_id": read(path / "idProduct"),
                 "product": read(path / "product"), "speed_mbps": read(path / "speed"),
                 "interfaces": []}
@@ -148,7 +158,8 @@ def main(argv=None):
     # dumps can still contain app names, display names and network addresses.
     for usb in pathlib.Path("/sys/bus/usb/devices").glob("*/serial"):
         try:
-            if (usb.parent / "idVendor").read_text().strip() == "0000":
+            # Without a configured phone ID every USB serial is withheld.
+            if phone_vendor() in (None, (usb.parent / "idVendor").read_text().strip()):
                 identifiers.append(usb.read_text().strip())
         except OSError:
             pass

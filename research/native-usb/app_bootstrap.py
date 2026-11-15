@@ -11,6 +11,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import dex_probe
 from version_query import emit, validate_config
+import site_env
 
 SERVICE = "com.sec.android.app.dexonpc/.service.DOPService"
 SERVICE_COMMAND = ["dumpsys", "activity", "service", SERVICE]
@@ -83,8 +84,9 @@ def find_usb(bus, address):
     # No USB import/discovery before main's two explicit approval acknowledgments.
     import usb.core
     import usb.util
-    emit("usb_find", vendor=0, product=0, bus=bus, address=address)
-    devices = list(usb.core.find(find_all=True, idVendor=0x0000, idProduct=0x0000,
+    vendor_id, product_id = site_env.phone_usb_id()
+    emit("usb_find", vendor=vendor_id, product=product_id, bus=bus, address=address)
+    devices = list(usb.core.find(find_all=True, idVendor=vendor_id, idProduct=product_id,
                                 bus=bus, address=address))
     if len(devices) != 1:
         raise ValueError("expected one matching USB device; refusing alternatives")

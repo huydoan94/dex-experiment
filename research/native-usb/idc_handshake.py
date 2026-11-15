@@ -16,6 +16,7 @@ import idc
 from idc_capture import observe_replies
 from loopback_transfer import TransferSession
 from tunnel_probe import SERVICE_UID, emit
+import site_env
 
 LISTENER_CONFIG = 1201
 CONNECT_CONFIG = 1202
@@ -141,8 +142,9 @@ def main(argv=None):
     try:
         import usb.core
         import usb.util
-        devices = list(usb.core.find(find_all=True, idVendor=0x0000,
-                                    idProduct=0x0000, bus=a.bus, address=a.address))
+        vendor_id, product_id = site_env.phone_usb_id()
+        devices = list(usb.core.find(find_all=True, idVendor=vendor_id,
+                                    idProduct=product_id, bus=a.bus, address=a.address))
         if len(devices) != 1:
             raise RuntimeError("expected exactly one selected phone")
         auth_probe.probe(devices[0], usb.util, usb.core.USBTimeoutError, a.output, result,

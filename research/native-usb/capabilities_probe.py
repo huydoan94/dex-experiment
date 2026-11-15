@@ -140,8 +140,9 @@ def main(argv=None):
     try:
         import usb.core
         import usb.util
-        auth_probe.emit("usb_find", bus=a.bus, address=a.address, vendor=0x0000, product=0x0000)
-        devices = list(usb.core.find(find_all=True, idVendor=0x0000, idProduct=0x0000,
+        vendor_id, product_id = site_env.phone_usb_id()
+        auth_probe.emit("usb_find", bus=a.bus, address=a.address, vendor=vendor_id, product=product_id)
+        devices = list(usb.core.find(find_all=True, idVendor=vendor_id, idProduct=product_id,
                                      bus=a.bus, address=a.address))
         if len(devices) != 1:
             raise RuntimeError("expected exactly one selected phone; refusing alternatives")

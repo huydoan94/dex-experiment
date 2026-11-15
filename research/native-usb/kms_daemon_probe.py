@@ -30,6 +30,7 @@ import daemon_sink
 import ui_confirm_display0 as ui_confirm
 import wfd_startup as wfd
 from tunnel_probe import emit
+import site_env
 
 STAGE_MARGIN_SECONDS = 8
 # True: report the official PcVer (rtsp_udp_live.BASE_PC_VERSION), so the phone
@@ -134,7 +135,8 @@ def main(argv=None):
     try:
         import usb.core
         import usb.util
-        devices=list(usb.core.find(find_all=True,idVendor=0x0000,idProduct=0x0000,
+        vendor_id, product_id = site_env.phone_usb_id()
+        devices=list(usb.core.find(find_all=True,idVendor=vendor_id,idProduct=product_id,
                                   bus=a.bus,address=a.address))
         if len(devices)!=1:
             raise RuntimeError("expected exactly one selected phone")

@@ -17,6 +17,9 @@ This repository is the research project. Data is saved in another container.
   `before-*-2026111x`. Time zone, phone serial and sink name come from a local
   config file read by dexd; without it, logs are UTC and the single attached
   phone is used.
+- **Site settings**: the phone USB ID and the replug request folder now come from
+  the backend's site settings (`usb_id`, `request_dir`). Not yet deployed: add
+  both keys there first, then deploy and restart.
 - **Client**: 1.3.0 (focus click and Alt+Tab not sent, hover sent while
   inactive), confirmed live by the user 2026-11-14. Build from `windows/`.
 - **Backend pins** (repository, 2026-11-14): comments reworded, and the gateway

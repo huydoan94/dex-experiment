@@ -5,6 +5,7 @@ from pathlib import Path
 import secrets
 import struct
 import time
+import site_env
 
 HEADER = struct.Struct("<4sIIII")
 LIMIT_BYTES = 4096
@@ -130,8 +131,9 @@ def main(argv=None):
     # Import/USB discovery is strictly behind the explicit approval guard.
     import usb.core
     import usb.util
-    emit("usb_find", vendor=0, product=0, bus=args.bus, address=args.address)
-    devices = list(usb.core.find(find_all=True, idVendor=0x0000, idProduct=0x0000,
+    vendor_id, product_id = site_env.phone_usb_id()
+    emit("usb_find", vendor=vendor_id, product=product_id, bus=args.bus, address=args.address)
+    devices = list(usb.core.find(find_all=True, idVendor=vendor_id, idProduct=product_id,
                                 bus=args.bus, address=args.address))
     if len(devices) != 1:
         raise RuntimeError("expected exactly one matching phone; refusing alternatives")

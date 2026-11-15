@@ -7,6 +7,7 @@ import builtins
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import struct
 import tempfile
@@ -104,6 +105,12 @@ class Util:
 
 
 class Tests(unittest.TestCase):
+    def setUp(self):
+        # A real run gets the phone's ID from dexd (site settings); any test value works.
+        patcher = patch.dict(os.environ, {"DEX_USB_ID": "1234:5678"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def run_probe(self, phone, device=None, listen_s=1):
         device = device or Device(phone)
         result = self.result = {}

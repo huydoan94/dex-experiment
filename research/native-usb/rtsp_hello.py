@@ -14,6 +14,7 @@ import wfd_startup as wfd
 from loopback_transfer import TransferSession
 from tunnel_probe import emit
 from usb_tunnel import TunnelError
+import site_env
 
 # Acceptance deadline, not a hard per-phase wall-clock bound: an in-flight
 # inherited USB write/ACK may finish after it. Late completion is rejected;
@@ -131,8 +132,9 @@ def main(argv=None):
     try:
         import usb.core
         import usb.util
-        devices = list(usb.core.find(find_all=True, idVendor=0x0000,
-                                    idProduct=0x0000, bus=a.bus, address=a.address))
+        vendor_id, product_id = site_env.phone_usb_id()
+        devices = list(usb.core.find(find_all=True, idVendor=vendor_id,
+                                    idProduct=product_id, bus=a.bus, address=a.address))
         if len(devices) != 1:
             raise RuntimeError("expected exactly one selected phone")
         auth_probe.probe(devices[0], usb.util, usb.core.USBTimeoutError, a.output, result,

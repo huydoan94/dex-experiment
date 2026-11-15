@@ -11,6 +11,7 @@ from usb_tunnel import Session, TunnelError
 from tunnel_probe import (Link, SERVICE_UID, MAX_FRAME_BYTES, MAX_RECEIVE_BYTES,
                           emit, _teardown, _terminated)
 from version_query import validate_config
+import site_env
 
 MAC = "02:00:00:00:00:01"  # Synthetic locally administered client identity.
 AUTH_SECONDS = 12
@@ -177,8 +178,9 @@ def main(argv=None):
     try:
         import usb.core
         import usb.util
-        emit("usb_find", bus=a.bus, address=a.address, vendor=0x0000, product=0x0000)
-        devices = list(usb.core.find(find_all=True, idVendor=0x0000, idProduct=0x0000,
+        vendor_id, product_id = site_env.phone_usb_id()
+        emit("usb_find", bus=a.bus, address=a.address, vendor=vendor_id, product=product_id)
+        devices = list(usb.core.find(find_all=True, idVendor=vendor_id, idProduct=product_id,
                                      bus=a.bus, address=a.address))
         if len(devices) != 1:
             raise RuntimeError("expected exactly one selected phone; refusing alternatives")

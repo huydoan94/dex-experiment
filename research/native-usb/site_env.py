@@ -40,6 +40,19 @@ INPUT_WIDTH, INPUT_HEIGHT = 1920, 1080
 _selected = None  # (width, height) of the format the phone picked in M4
 
 
+USB_ID = re.compile(r"([0-9A-Fa-f]{4}):([0-9A-Fa-f]{4})")
+
+
+def phone_usb_id():
+    """(vendor, product) of the phone from DEX_USB_ID ("vvvv:pppp"), which dexd sets
+    from the site setting usb_id. Without it nothing is searched: a missing ID
+    must never widen the search to any USB device."""
+    match = USB_ID.fullmatch(os.environ.get("DEX_USB_ID", "").strip())
+    if not match:
+        raise RuntimeError("phone USB ID not set (site setting usb_id or DEX_USB_ID)")
+    return int(match[1], 16), int(match[2], 16)
+
+
 def sink_name():
     value = os.environ.get("DEX_SINK_NAME", "")
     return value if SINK_NAME.fullmatch(value) else DEFAULT_SINK_NAME
