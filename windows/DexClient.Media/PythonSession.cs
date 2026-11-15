@@ -32,6 +32,8 @@ public sealed class PythonSession : IAsyncDisposable
     public Stream MediaStream => media?.Stream ?? throw new InvalidOperationException("Not connected.");
     public TcpCounters? MediaCounters => media?.Counters();
     public TcpCounters? InputCounters => input?.Counters();
+    // As the gateway reported it at connect (unchecked text; StatusText.Backend cleans it).
+    public string? BackendVersion { get; private set; }
     public async Task ConnectAsync(BackendSettings settings, CancellationToken cancellation)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(stopped.Token, cancellation);
@@ -41,7 +43,7 @@ public sealed class PythonSession : IAsyncDisposable
             // Both are authenticated before the paired gateway claims viewer.lock.
             input = await DirectChannel.OpenAsync(settings, "input", session, linked.Token).ConfigureAwait(false);
             media = await DirectChannel.OpenAsync(settings, "media", session, linked.Token).ConfigureAwait(false);
-            await input.ReadyAsync("ready", linked.Token).ConfigureAwait(false);
+            BackendVersion = await input.ReadyAsync("ready", linked.Token).ConfigureAwait(false);
             await media.ReadyAsync("ready", linked.Token).ConfigureAwait(false);
             linked.Token.ThrowIfCancellationRequested();
             Writer = new InputWriter(input.Stream);

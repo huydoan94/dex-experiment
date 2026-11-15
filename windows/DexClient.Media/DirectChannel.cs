@@ -47,7 +47,8 @@ public sealed class DirectChannel : IDisposable
         }
         catch { stream?.Dispose(); socket.Dispose(); throw; }
     }
-    public async Task ReadyAsync(string expected, CancellationToken cancellation)
+    // Returns the backend version the gateway reported, or null (older gateways send none).
+    public async Task<string?> ReadyAsync(string expected, CancellationToken cancellation)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         deadline.CancelAfter(TimeSpan.FromSeconds(20));
@@ -65,7 +66,8 @@ public sealed class DirectChannel : IDisposable
                 string? status = reply.RootElement.GetProperty("status").GetString();
                 if (status == "busy") throw new IOException("Another viewer is already attached.");
                 if (status != expected) throw new IOException("Gateway refused the connection.");
-                return;
+                return reply.RootElement.TryGetProperty("backend", out var backend) && backend.ValueKind == JsonValueKind.String
+                    ? backend.GetString() : null;
             }
             bytes.Add(one[0]);
         }

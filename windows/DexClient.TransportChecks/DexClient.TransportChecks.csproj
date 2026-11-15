@@ -9,5 +9,6 @@
     <Compile Include="../DexClient.Media/PythonSession.cs" Link="PythonSession.cs" />
     <Compile Include="../DexClient.Media/InputWriter.cs" Link="InputWriter.cs" />
     <Compile Include="../DexClient.Media/CursorShapes.cs" Link="CursorShapes.cs" />
+    <Compile Include="../DexClient.Media/ClipboardLines.cs" Link="ClipboardLines.cs" />
   </ItemGroup>
 </Project>
