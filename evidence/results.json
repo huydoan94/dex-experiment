@@ -7,7 +7,7 @@
    "app_dll": "C7640F632C8FD48791EFC79C624BCE3E421C10F52F1753C8A1B3C0F9C6B93C75",
    "core_dll": "F88417D681D4C01896469469D7363CEDC7F9F503CDFF5CCF2D5401AF7EFD5E68",
    "media_dll": "09C96BEA19EF9DC4532E11FE013FE39115752B6170167690C6D50CA96EEF1C01",
-   "confirmed": "not yet tried live"
+   "confirmed": "live by the user 2026-11-15"
   },
   "backend_container": {
    "path": "runtime subset of research/native-usb on the backend machine",

@@ -22,9 +22,9 @@ This repository is the research project. Data is saved in another container.
   both keys set; running since the restart that day.
 - **Backend version**: 1.0.0 (1a432ee1) (dexd VERSION + short dexd.py hash), reported to the
   app by the gateway. Bump VERSION with each backend release.
-- **Client**: 1.3.2 packaged (app and backend versions in telemetry, no
-  "Connected" line), not yet tried live; 1.3.0 (focus click, Alt+Tab, hover) confirmed live 2026-11-14 and
-  kept until 1.3.2 is. Build from `windows/`.
+- **Client**: 1.3.2 (app and backend versions in telemetry, no "Connected"
+  line, focus click and Alt+Tab not sent, hover while inactive), confirmed live
+  2026-11-15. Build from `windows/`.
 - **Backend pins** (repository, 2026-11-14): comments reworded, and the gateway
   limits unauthenticated connections (direct_gateway b9079a8e, dexd 0be9f39c). Deployed
   2026-11-14 (before-gateway-20261114T154329Z backup); loads at the next backend
